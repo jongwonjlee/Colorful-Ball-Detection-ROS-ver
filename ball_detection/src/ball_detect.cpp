@@ -2,40 +2,32 @@
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "ball_detect_node"); //init ros nodd
+    ros::init(argc, argv, "ball_detect_node");
     ros::NodeHandle nh; //create node handler
-    image_transport::ImageTransport it(nh); //create image transport and connect it to node handler
 
-    //image_transport::Subscriber sub = it.subscribe("camera/image", 1, imageCallback); //create subscriber and callback
-    image_transport::Subscriber sub = it.subscribe("/camera/color/image_raw", 1, imageCallback); //create subscriber and callback
-    pub_red = nh.advertise<core_msgs::ball_position>("/position_red", 100);
-    pub_blue = nh.advertise<core_msgs::ball_position>("/position_blue", 100);
+    message_filters::Subscriber<Image> color_sub(nh, "camera/color/image_raw", 1);
+    message_filters::Subscriber<Image> depth_sub(nh, "camera/aligned_depth_to_color/image_raw", 1);
+    TimeSynchronizer<Image, Image> sync(color_sub, depth_sub, 10);
+    sync.registerCallback(boost::bind(&imageCallback, _1, _2));
+    pub = nh.advertise<core_msgs::ball_position>("/ball_position", 100);
     pub_markers = nh.advertise<visualization_msgs::Marker>("/balls",1);
 
-    ros::spin(); //spin.
-
+    ros::spin();
     return 0;
 }
 
 
-void imageCallback(const sensor_msgs::ImageConstPtr& msg)
+void imageCallback(const sensor_msgs::ImageConstPtr& msg_color, const sensor_msgs::ImageConstPtr& msg_depth)
 {
-    if(msg->height==480&&buffer.size().width==320){  //check the size of the image received. if the image have 640x480, then change the buffer size to 640x480.
-        std::cout<<"resized"<<std::endl;
-        cv::resize(buffer,buffer,cv::Size(640,480));
-    }
-
-    else{
-        //do nothing!
-   }
-
     try
     {
-        buffer = cv_bridge::toCvShare(msg, "bgr8")->image;  //transfer the image data into buffer
+        buffer_color = cv_bridge::toCvShare(msg_color, "bgr8")->image;  //transfer the image data into buffer
+        buffer_depth = cv_bridge::toCvShare(msg_depth, "16UC1")->image;
     }
     catch (cv_bridge::Exception& e)
     {
-         ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
+         ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg_color->encoding.c_str());
+         ROS_ERROR("Could not convert from '%s' to '16UC1'.", msg_depth->encoding.c_str());
     }
 
     ball_detect(); //proceed ball detection
@@ -43,15 +35,22 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 
 
 void ball_detect(){
-    Mat frame, bgr_frame, hsv_frame, hsv_frame_red, hsv_frame_red1, hsv_frame_red2, hsv_frame_blue, hsv_frame_red_blur, hsv_frame_blue_blur, hsv_frame_red_canny, hsv_frame_blue_canny, result; //declare matrix for frames and result
+    Mat color_frame, depth_frame, bgr_frame, hsv_frame, hsv_frame_red, hsv_frame_red1, hsv_frame_red2, hsv_frame_blue, hsv_frame_red_blur, hsv_frame_blue_blur, hsv_frame_red_canny, hsv_frame_blue_canny, result; //declare matrix for frames and result
     Mat calibrated_frame;
 
     //Copy buffer image to frame. If the size of the orignal image(cv::Mat buffer) is 320x240, then resize the image to save (cv::Mat frame) it to 640x480
-    if(buffer.size().width==320){
-        cv::resize(buffer, frame, cv::Size(640, 480));
+    if(buffer_color.size().width==320){
+        cv::resize(buffer_color, color_frame, cv::Size(640, 480));
     }
     else{
-        frame = buffer;
+        color_frame = buffer_color;
+    }
+
+    if(buffer_depth.size().width==320){
+        cv::resize(buffer_depth, depth_frame, cv::Size(640, 480));
+    }
+    else{
+        depth_frame = buffer_depth;
     }
 
     //declare matrix for calibrated frame
@@ -74,38 +73,10 @@ void ball_detect(){
     namedWindow("Canny edge - blue", WINDOW_NORMAL);
     namedWindow("Result", WINDOW_NORMAL);
 
-    /*
-    moveWindow("Video capture",50, 0);
-    moveWindow("Detect red in HSV", 50,370);
-    moveWindow("Detect blue in HSV",470,370);
-    moveWindow("Canny edge - red",50,730);
-    moveWindow("Canny edge - blue", 470,730);
-    moveWindow("Result", 470, 0);
-    */
-
-    createTrackbar("Low H","Detect red in HSV", &low_h_r, 180,on_low_h_thresh_trackbar_red);
-    createTrackbar("High H","Detect red in HSV", &high_h_r, 180,on_high_h_thresh_trackbar_red);
-    createTrackbar("Low H2","Detect red in HSV", &low_h2_r, 180,on_low_h2_thresh_trackbar_red);
-    createTrackbar("High H2","Detect red in HSV", &high_h2_r, 180,on_high_h2_thresh_trackbar_red);
-    createTrackbar("Low S","Detect red in HSV", &low_s_r, 255,on_low_s_thresh_trackbar_red);
-    createTrackbar("High S","Detect red in HSV", &high_s_r, 255,on_high_s_thresh_trackbar_red);
-    createTrackbar("Low V","Detect red in HSV", &low_v_r, 255,on_low_v_thresh_trackbar_red);
-    createTrackbar("High V","Detect red in HSV", &high_v_r, 255,on_high_v_thresh_trackbar_red);
-
-    createTrackbar("Low H","Detect blue in HSV", &low_h_b, 180,on_low_h_thresh_trackbar_blue);
-    createTrackbar("High H","Detect blue in HSV", &high_h_b, 180,on_high_h_thresh_trackbar_blue);
-    createTrackbar("Low S","Detect blue in HSV", &low_s_b, 255,on_low_s_thresh_trackbar_blue);
-    createTrackbar("High S","Detect blue in HSV", &high_s_b, 255,on_high_s_thresh_trackbar_blue);
-    createTrackbar("Low V","Detect blue in HSV", &low_v_b, 255,on_low_v_thresh_trackbar_blue);
-    createTrackbar("High V","Detect blue in HSV", &high_v_b, 255,on_high_v_thresh_trackbar_blue);
-
-    createTrackbar("Min Threshold:","Canny edge - red",&lowThreshold_r, 100,on_canny_edge_trackbar_red);
-    createTrackbar("Min Threshold:","Canny edge - blue",&lowThreshold_b, 100,on_canny_edge_trackbar_blue);
-
     //undistort(frame, calibrated_frame, intrinsic, distCoeffs);
     //result = calibrated_frame.clone(); //deep copy calibrated_frame to result
 
-    calibrated_frame = frame.clone();
+    calibrated_frame = color_frame.clone();
     result = calibrated_frame.clone();
 
     /* step 1: blur it */
@@ -149,46 +120,79 @@ void ball_detect(){
     /* step 7: With detected contours above, estimate each contour's center and radius. */
     vector<vector<Point> > contours_r_poly( contours_r.size() );
     vector<vector<Point> > contours_b_poly( contours_b.size() );
-    vector<Point2f>center_r( contours_r.size() );
-    vector<Point2f>center_b( contours_b.size() );
-    //set contours_r_poly as a vector of points size of contours_r
-    //set contours_b_poly as a vector of points size of contours_b
-    //set center_r as point2f vector size of contours_r
-    //set center_b as point2f vector size of contours_b
+    vector<Point2f>center_r2f( contours_r.size() );
+    vector<Point2f>center_b2f( contours_b.size() );
 
-    vector<float>radius_r( contours_r.size() ); //set radius_r as float type vector size of contours_r
-    vector<float>radius_b( contours_b.size() ); //set radius_b as float type vector size of contours_b
+    vector<float>radius_r2f( contours_r.size() ); //set radius_r as float type vector size of contours_r
+    vector<float>radius_b2f( contours_b.size() ); //set radius_b as float type vector size of contours_b
     for( size_t i = 0; i < contours_r.size(); i++ ){
         approxPolyDP( contours_r[i], contours_r_poly[i], 3, true ); //approximate contours_r[i] to a smoother polygon and put output in contours_r_poly[i] with approximation accuracy 3 (pixelwise distance between the original and approximated point)
-        minEnclosingCircle( contours_r_poly[i], center_r[i], radius_r[i] ); //get position of the polygon's center and its radius from minimum enclosing circle from contours_r_poly[i]
+        minEnclosingCircle( contours_r_poly[i], center_r2f[i], radius_r2f[i] ); //get position of the polygon's center and its radius from minimum enclosing circle from contours_r_poly[i]
     }
     for( size_t i = 0; i < contours_b.size(); i++ ){
         //run the loop while size_t type i from 0 to size of contours_b-1 size by increasing i 1
         approxPolyDP( contours_b[i], contours_b_poly[i], 3, true );
-        minEnclosingCircle( contours_b_poly[i], center_b[i], radius_b[i] );
+        minEnclosingCircle( contours_b_poly[i], center_b2f[i], radius_b2f[i] );
     }
 
-    /*****code should be here!******/
 
-    remove_trashval(center_r, radius_r, iMin_tracking_ball_size);
-    remove_trashval(center_b, radius_b, iMin_tracking_ball_size);
-
-
-    cout << "detected red balls: " << center_r.size() << endl;
-    cout << "detected blue balls: " << center_b.size() << endl;
+    remove_trashval(center_r2f, radius_r2f, iMin_tracking_ball_size);
+    remove_trashval(center_b2f, radius_b2f, iMin_tracking_ball_size);
 
 
-    core_msgs::ball_position msg_r;
-    msg_r.size =center_r.size();
-    msg_r.img_x.resize(center_r.size());
-    msg_r.img_y.resize(center_r.size());
-    core_msgs::ball_position msg_b;
-    msg_b.size =center_b.size();
-    msg_b.img_x.resize(center_b.size());
-    msg_b.img_y.resize(center_b.size());
+    /****** Recast data type ******/
+    vector<Point2i>center_r;
+    vector<int>radius_r;
+    vector<Point2i>center_b;
+    vector<int>radius_b;
+
+
+    //cout << "contours_r_poly.size(): " << contours_r_poly.size() << "\ncenter_r2f.size(): " << center_r2f.size() << endl;
+
+
+    for (size_t i=0 ; i<center_r2f.size(); i++)
+    {
+        center_r.push_back( cv::Point2i( static_cast<int>(center_r2f[i].x), static_cast<int>(center_r2f[i].y)  ) );
+        radius_r.push_back( static_cast<int>(radius_r2f[i]));
+    }
+    for (size_t i=0 ; i<center_b2f.size(); i++)
+    {
+        center_b.push_back( cv::Point2i( static_cast<int>(center_b2f[i].x), static_cast<int>(center_b2f[i].y)  ) );
+        radius_b.push_back( static_cast<int>(radius_b2f[i]));
+    }
+
+
+    vector<short int>distance_r;
+    vector<short int>distance_b;
+
+    for(size_t i = 0; i< center_r.size(); i++ ){
+        //cout << "<red ball> " << "\nx: " << center_r[i].x << "\ny: " << center_r[i].y << "\ndistance: " << depth_frame.at<short int>(center_r[i].y, center_r[i].x) << endl;
+        distance_r.push_back(depth_frame.at<short int>(center_r[i].y, center_r[i].x));
+
+    }
+    for(size_t i = 0; i< center_b.size(); i++ ){
+        //cout << "<blue ball> " << "\nx: " << center_r[i].x << "\ny: " << center_r[i].y << "\ndistance: " << depth_frame.at<short int>(center_r[i].y, center_r[i].x) << endl;
+        distance_b.push_back(depth_frame.at<short int>(center_b[i].y, center_b[i].x));
+    }
+
+
+    //cout << "detected red balls: " << center_r.size() << endl;
+    //cout << "detected blue balls: " << center_b.size() << endl;
+
+
+    core_msgs::ball_position msg_pub;
+    msg_pub.red_size = center_r.size();
+    msg_pub.blue_size = center_b.size();
+    msg_pub.red_img_x.resize(center_r.size());
+    msg_pub.red_img_y.resize(center_r.size());
+    msg_pub.red_distance.resize(center_r.size());
+    msg_pub.blue_img_x.resize(center_b.size());
+    msg_pub.blue_img_y.resize(center_b.size());
+    msg_pub.blue_distance.resize(center_b.size());
+
 
     visualization_msgs::Marker ball_list;  //declare marker
-    ball_list.header.frame_id = "/RGBD_camera_color_frame";  //set the frame
+    ball_list.header.frame_id = "/camera_color_frame";  //set the frame
     ball_list.header.stamp = ros::Time::now();   //set the header. without it, the publisher may not publish.
     ball_list.ns = "balls";   //name of markers
     ball_list.action = visualization_msgs::Marker::ADD;
@@ -212,20 +216,26 @@ void ball_detect(){
     for( size_t i = 0; i< center_r.size(); i++ ){
         Scalar color = Scalar(0 , 0, 255); //set scalar color as 255 red
 
+
         vector<float> ball_position_r; //declare float vector named ball_position_r
-        ball_position_r = pixel2point(center_r[i], radius_r[i]);
+        ball_position_r = pixel2point_depth(center_r[i], distance_r[i]);
         float isx = ball_position_r[0];
         float isy = ball_position_r[1];
         float isz = ball_position_r[2];
         string sx = floatToString(isx);
         string sy = floatToString(isy);
         string sz = floatToString(isz);
-        text = "Red ball:" + sx + "," + sy + "," + sz;
-        putText(result, text, center_r[i],2,1,color,2);
-        circle(result, center_r[i], static_cast<int>(radius_r[i]), color, 3, 8, 0 );
 
-        //msg_r.img_x[i]=isx;
-        //msg_r.img_y[i]=isy;
+
+        text = "Red ball:" + intToString(distance_r[i]);
+        //cout << "distance_r: " << distance_r[i] << endl;
+        putText(result, text, center_r[i],2,1,color,2);
+        circle(result, center_r[i], radius_r[i], color, 3, 8, 0 );
+
+        msg_pub.red_img_x[i]=center_r[i].x;
+        msg_pub.red_img_y[i]=center_r[i].y;
+        msg_pub.red_distance[i] = distance_r[i];
+
 
         geometry_msgs::Point p;
         p.x = isx;   //p.x, p.y, p.z are the position of the balls. it should be computed with camera's intrinstic parameters
@@ -245,20 +255,25 @@ void ball_detect(){
     for( size_t i = 0; i< center_b.size(); i++ ){ //run the loop while size_t type i from 0 to size of contours_b-1 size by increasing i 1
         Scalar color = Scalar(255, 0, 0); //set scalar color as 255 blue
 
+
         vector<float> ball_position_b; //declare float vector named ball_position_b
-        ball_position_b = pixel2point(center_b[i], radius_b[i]);
+        ball_position_b = pixel2point_depth(center_b[i], distance_b[i]);
         float isx = ball_position_b[0];
         float isy = ball_position_b[1];
         float isz = ball_position_b[2];
         string sx = floatToString(isx);
         string sy = floatToString(isy);
         string sz = floatToString(isz);
-        text = "Blue ball:" + sx + "," + sy + "," + sz; //put message(Blue ball: sx,sy,sz) to text
-        putText(result, text, center_b[i],2,1,color,2);
-        circle(result, center_b[i], static_cast<int>(radius_b[i]), color, 3, 8, 0 );
 
-        //msg_b.img_x[i]=isx;
-        //msg_b.img_y[i]=isy;
+
+        text = "Blue ball:" + intToString(distance_b[i]);
+        //cout << "distance_b: " << distance_b[i] << endl;
+        putText(result, text, center_b[i],2,1,color,2);
+        circle(result, center_b[i], radius_b[i], color, 3, 8, 0 );
+
+        msg_pub.blue_img_x[i]=center_b[i].x;
+        msg_pub.blue_img_y[i]=center_b[i].y;
+        msg_pub.blue_distance[i] = distance_b[i];
 
         geometry_msgs::Point p;
         p.x = isx;   //p.x, p.y, p.z are the position of the balls. it should be computed with camera's intrinstic parameters
@@ -283,82 +298,8 @@ void ball_detect(){
 
     cv::waitKey(1);
 
-    pub_red.publish(msg_r);
-    pub_blue.publish(msg_b);
-
+    pub.publish(msg_pub);
     pub_markers.publish(ball_list);  //publish a marker message
-
-
-    /*
-    Canny(frame,edges,50,200); //proceed edge detection. Whereas frame has 3 channels, edges has 1 channel. (grayscale)
-
-
-    vector<Vec3f> circles; //assign a memory to save the result of circle detection
-    HoughCircles(edges,circles,HOUGH_GRADIENT, 1, 50, 200, 20, 3, 25); //proceed circle detection
-    Vec3f params; //assign a memory to save the information of circles
-    float cx,cy,r;
-    cout<<"circles.size="<<circles.size()<<endl;  //print the number of circles detected
-    */
-    /*
-    core_msgs::ball_position msg;  //create a message for ball positions
-    msg.size =circles.size(); //adjust the size of message. (*the size of message is varying depending on how many circles are detected)
-    msg.img_x.resize(circles.size());  //adjust the size of array
-    msg.img_y.resize(circles.size());  //adjust the size of array
-
-    visualization_msgs::Marker ball_list;  //declare marker
-    ball_list.header.frame_id = "/camera_link";  //set the frame
-    ball_list.header.stamp = ros::Time::now();   //set the header. without it, the publisher may not publish.
-    ball_list.ns = "balls";   //name of markers
-    ball_list.action = visualization_msgs::Marker::ADD;
-    ball_list.pose.position.x=0; //the transformation between the frame and camera data, just set it (0,0,0,0,0,0) for (x,y,z,roll,pitch,yaw)
-    ball_list.pose.position.y=0;
-    ball_list.pose.position.z=0;
-    ball_list.pose.orientation.x=0;
-    ball_list.pose.orientation.y=0;
-    ball_list.pose.orientation.z=0;
-    ball_list.pose.orientation.w=1.0;
-
-    ball_list.id = 0; //set the marker id. if you use another markers, then make them use their own unique ids
-    ball_list.type = visualization_msgs::Marker::SPHERE_LIST;  //set the type of marker
-
-    double radius = 0.10; //set the radius of marker   1.0 means 1.0m, 0.001 means 1mm
-    ball_list.scale.x=radius;
-    ball_list.scale.y=radius;
-    ball_list.scale.z=radius;
-
-    for(int k=0;k<circles.size();k++){
-        params = circles[k];  //the information of k-th circle
-        cx=cvRound(params[0]);  //x position of k-th circle
-        cy=cvRound(params[1]);  //y position
-        r=cvRound(params[2]); //radius
-        // 원 출력을 위한 원 중심 생성
-        Point center(cx,cy);  //declare a Point
-        circle(frame,center,r,Scalar(0,0,255),5); //draw a circle on 'frame' based on the information given,   r = radius, Scalar(0,0,255) means color, 10 means lineWidth
-
-        cy = 3.839*(exp(-0.03284*cy))+1.245*(exp(-0.00554*cy));   //convert the position of the ball in camera coordinate to the position in base coordinate. It is related to the calibration process. You shoould modify this.
-        cx = (0.002667*cy+0.0003)*cx-(0.9275*cy+0.114);
-
-        msg.img_x[k]=cx;  //input the x position of the ball to the message
-        msg.img_y[k]=cy;
-
-        geometry_msgs::Point p;
-        p.x = cx;   //p.x, p.y, p.z are the position of the balls. it should be computed with camera's intrinstic parameters
-        p.y = cy;
-        p.z = 0.1;
-        ball_list.points.push_back(p);
-
-        std_msgs::ColorRGBA c;
-        c.r = 0.0;  //set the color of the balls. You can set it respectively.
-        c.g = 1.0;
-        c.b = 0.0;
-        c.a = 1.0;
-        ball_list.colors.push_back(c);
-    }
-    cv::imshow("view", frame);  //show the image with a window
-    cv::waitKey(1);
-    pub.publish(msg);  //publish a message
-    pub_markers.publish(ball_list);  //publish a marker message
-    */
 
 }
 
@@ -377,6 +318,27 @@ string floatToString(float f){
     return buffer.str();
 }
 
+vector<float> pixel2point_depth(Point2i center, int distance){
+    vector<float> position;
+    int x, y;
+    float u, v, Xc, Yc, Zc;
+
+    u = (static_cast<float>(center.x)-intrinsic_data[2])/intrinsic_data[0];
+    v = (static_cast<float>(center.y)-intrinsic_data[5])/intrinsic_data[4];
+
+    Zc= 1/sqrt(pow(u,2.0) + pow(v,2.0) + 1.0)*distance/1000; //compute Z value of the ball center
+    Xc=u*Zc ; //calculate real x position from camera coordinate
+    Yc=v*Zc ; //calculate real y position from camera coordinate
+
+    Xc=roundf(Xc * 1000) / 1000;
+    Yc=roundf(Yc * 1000) / 1000;
+    Zc=roundf(Zc * 1000) / 1000;
+    position.push_back(Xc);
+    position.push_back(Yc);
+    position.push_back(Zc);
+    return position;
+}
+
 
 vector<float> pixel2point(Point2f center, float radius){
     //get center of ball in 2d image plane and transform it into ball position in 3d camera coordinate
@@ -390,25 +352,18 @@ vector<float> pixel2point(Point2f center, float radius){
     cout << "y: " << y << endl;
 
     u = (x-intrinsic_data[2])/intrinsic_data[0];
-    //calculate x position of image plane
     v = (y-intrinsic_data[5])/intrinsic_data[4];
-    //calculate y position of image plane
-    /*
-    Zc=(intrinsic_data[0]*fball_radius)/(2*(float)radius) ; //compute Z value of the ball center
-    Xc=u*Zc ; //calculate real x position from camera coordinate
-    Yc=v*Zc ; //calculate real y position from camera coordinate
-    */
+
     Yc= (intrinsic_data[0]*fball_radius)/(2*(float)radius) ; //compute Z value of the ball center
     Xc= u*Yc ; //calculate real x position from camera coordinate
-    Zc= - v*Yc ; //calculate real y position from camera coordinate
+    Zc= v*Yc ; //calculate real y position from camera coordinate
     Xc=roundf(Xc * 1000) / 1000; //make Xc to 4digit
     Yc=roundf(Yc * 1000) / 1000; //make Yc to 4digit
     Zc=roundf(Zc * 1000) / 1000; //make Zc to 4digit
-    position.push_back(Xc); //insert Xc to vector position
-    position.push_back(Yc); //insert Yc to vector position
-    position.push_back(Zc); //insert Zc to vector position
+    position.push_back(Xc);
+    position.push_back(Yc);
+    position.push_back(Zc);
     return position;
-    //return vector position
 }
 
 
@@ -479,71 +434,4 @@ void remove_trashval(vector<Point2f> &center, vector<float> &radius, int pixel_r
     radius = temp_radius;
     center = temp_center;
 
-}
-
-
-// Trackbar for image threshodling in HSV colorspace : Red
-void on_low_h_thresh_trackbar_red(int, void *){
-    low_h_r = min(high_h_r-1, low_h_r); //set low_h_r as minimum value of high_h_r-1 and low_h_r
-    setTrackbarPos("Low H","Object Detection_HSV_Red", low_h_r);
-}
-void on_high_h_thresh_trackbar_red(int, void *){
-    high_h_r = max(high_h_r, low_h_r+1);
-    setTrackbarPos("High H", "Object Detection_HSV_Red", high_h_r);
-}
-void on_low_h2_thresh_trackbar_red(int, void *){
-    low_h2_r = min(high_h2_r-1, low_h2_r);
-    setTrackbarPos("Low H2","Object Detection_HSV_Red", low_h2_r);
-}
-void on_high_h2_thresh_trackbar_red(int, void *){
-    high_h2_r = max(high_h2_r, low_h2_r+1);
-}
-void on_low_s_thresh_trackbar_red(int, void *){
-    low_s_r = min(high_s_r-1, low_s_r); //set low_s_r as minimum value of high_s_r-1 and low_s_r
-    setTrackbarPos("Low S","Object Detection_HSV_Red", low_s_r);
-}
-void on_high_s_thresh_trackbar_red(int, void *){
-    high_s_r = max(high_s_r, low_s_r+1);
-    setTrackbarPos("High S", "Object Detection_HSV_Red", high_s_r); //set trackbar position as high_s_r on trackbar "High S" on window "Object Detection_HSV_Red"
-}
-void on_low_v_thresh_trackbar_red(int, void *){
-    low_v_r= min(high_v_r-1, low_v_r); //set low_v_r as minimum value of high_v_r-1 and low_v_r
-    setTrackbarPos("Low V","Object Detection_HSV_Red", low_v_r);
-}
-void on_high_v_thresh_trackbar_red(int, void *){
-    high_v_r = max(high_v_r, low_v_r+1);
-}
-
-// Trackbar for image threshodling in HSV colorspace : Blue
-void on_low_h_thresh_trackbar_blue(int, void *){
-    setTrackbarPos("Low H","Object Detection_HSV_Blue", low_h_b);
-}
-void on_high_h_thresh_trackbar_blue(int, void *){
-    high_h_b = max(high_h_b, low_h_b+1);
-    setTrackbarPos("High H", "Object Detection_HSV_Blue", high_h_b);
-}
-void on_low_s_thresh_trackbar_blue(int, void *){
-    low_s_b = min(high_s_b-1, low_s_b); //set low_s_b as minimum value of high_s_b-1 and low_s_b
-    setTrackbarPos("Low S","Object Detection_HSV_Blue", low_s_b);
-}
-void on_high_s_thresh_trackbar_blue(int, void *){
-    high_s_b = max(high_s_b, low_s_b+1);
-    setTrackbarPos("High S", "Object Detection_HSV_Blue", high_s_b);
-}
-void on_low_v_thresh_trackbar_blue(int, void *){
-    low_v_b= min(high_v_b-1, low_v_b); //set low_v_b as minimum value of high_v_b-1 and low_v_b
-    setTrackbarPos("Low V","Object Detection_HSV_Blue", low_v_b);
-}
-void on_high_v_thresh_trackbar_blue(int, void *){
-    high_v_b = max(high_v_b, low_v_b+1);
-    setTrackbarPos("High V", "Object Detection_HSV_Blue", high_v_b);
-}
-
-
-// Trackbar for Canny edge algorithm
-void on_canny_edge_trackbar_red(int, void *){
-    setTrackbarPos("Min Threshold", "Canny Edge for Red Ball",lowThreshold_r); //set trackbar position as lowThreshold_r on trackbar "Min Threshold" on window
-}
-void on_canny_edge_trackbar_blue(int, void *){
-    setTrackbarPos("Min Threshold", "Canny Edge for Blue Ball",lowThreshold_b); //
 }
