@@ -30,11 +30,12 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg_color, const sensor_msg
          ROS_ERROR("Could not convert from '%s' to '16UC1'.", msg_depth->encoding.c_str());
     }
 
-    ball_detect(); //proceed ball detection
+    balls_info detected_balls = ball_detect(); //proceed ball detection
+    pub_msgs(detected_balls);
 }
 
 
-void ball_detect(){
+balls_info ball_detect(){
     Mat color_frame, depth_frame, bgr_frame, hsv_frame, hsv_frame_red, hsv_frame_red1, hsv_frame_red2, hsv_frame_blue, hsv_frame_red_blur, hsv_frame_blue_blur, hsv_frame_red_canny, hsv_frame_blue_canny, result; //declare matrix for frames and result
     Mat calibrated_frame;
 
@@ -140,55 +141,99 @@ void ball_detect(){
     remove_trashval(center_b2f, radius_b2f, iMin_tracking_ball_size);
 
 
-    /****** Recast data type ******/
-    vector<Point2i>center_r;
-    vector<int>radius_r;
-    vector<Point2i>center_b;
-    vector<int>radius_b;
+    /* Step 8: Push data into the return value. */
+    balls_info vals;
 
+    vals.num_r = static_cast<size_t>(center_r2f.size());
+    vals.num_b = static_cast<size_t>(center_b2f.size());
 
-    //cout << "contours_r_poly.size(): " << contours_r_poly.size() << "\ncenter_r2f.size(): " << center_r2f.size() << endl;
-
-
-    for (size_t i=0 ; i<center_r2f.size(); i++)
+    for (size_t i=0 ; i<vals.num_r; i++)
     {
-        center_r.push_back( cv::Point2i( static_cast<int>(center_r2f[i].x), static_cast<int>(center_r2f[i].y)  ) );
-        radius_r.push_back( static_cast<int>(radius_r2f[i]));
+        vals.center_r.push_back( cv::Point2i( static_cast<int>(center_r2f[i].x), static_cast<int>(center_r2f[i].y)  ) );
+        vals.radius_r.push_back( static_cast<int>(radius_r2f[i]));
+        vals.distance_r.push_back(depth_frame.at<short int>(vals.center_r[i].y, vals.center_r[i].x));
     }
-    for (size_t i=0 ; i<center_b2f.size(); i++)
+    for (size_t i=0 ; i<vals.num_b; i++)
     {
-        center_b.push_back( cv::Point2i( static_cast<int>(center_b2f[i].x), static_cast<int>(center_b2f[i].y)  ) );
-        radius_b.push_back( static_cast<int>(radius_b2f[i]));
+        vals.center_b.push_back( cv::Point2i( static_cast<int>(center_b2f[i].x), static_cast<int>(center_b2f[i].y)  ) );
+        vals.radius_b.push_back( static_cast<int>(radius_b2f[i]));
+        vals.distance_b.push_back(depth_frame.at<short int>(vals.center_b[i].y, vals.center_b[i].x));
     }
 
 
-    vector<short int>distance_r;
-    vector<short int>distance_b;
+    /* step 9: Draw detected balls */
+    for(size_t i = 0; i< vals.num_r; i++){
+        Scalar color = Scalar(0 , 0, 255); //set scalar color as 255 red
 
-    for(size_t i = 0; i< center_r.size(); i++ ){
-        //cout << "<red ball> " << "\nx: " << center_r[i].x << "\ny: " << center_r[i].y << "\ndistance: " << depth_frame.at<short int>(center_r[i].y, center_r[i].x) << endl;
-        distance_r.push_back(depth_frame.at<short int>(center_r[i].y, center_r[i].x));
+        vector<float> ball_position_r; //declare float vector named ball_position_r
+        ball_position_r = pixel2point_depth(vals.center_r[i], vals.distance_r[i]);
+        float isx = ball_position_r[0];
+        float isy = ball_position_r[1];
+        float isz = ball_position_r[2];
+        string sx = floatToString(isx);
+        string sy = floatToString(isy);
+        string sz = floatToString(isz);
+
+        text = "Red ball:" + intToString(vals.distance_r[i]);
+        putText(result, text, vals.center_r[i],2,1,color,2);
+        circle(result, vals.center_r[i], vals.radius_r[i], color, 3, 8, 0 );
 
     }
-    for(size_t i = 0; i< center_b.size(); i++ ){
-        //cout << "<blue ball> " << "\nx: " << center_r[i].x << "\ny: " << center_r[i].y << "\ndistance: " << depth_frame.at<short int>(center_r[i].y, center_r[i].x) << endl;
-        distance_b.push_back(depth_frame.at<short int>(center_b[i].y, center_b[i].x));
+
+    for(size_t i = 0; i< vals.num_b; i++){ //run the loop while size_t type i from 0 to size of contours_b-1 size by increasing i 1
+        Scalar color = Scalar(255, 0, 0); //set scalar color as 255 blue
+
+        vector<float> ball_position_b; //declare float vector named ball_position_b
+        ball_position_b = pixel2point_depth(vals.center_b[i], vals.distance_b[i]);
+        float isx = ball_position_b[0];
+        float isy = ball_position_b[1];
+        float isz = ball_position_b[2];
+        string sx = floatToString(isx);
+        string sy = floatToString(isy);
+        string sz = floatToString(isz);
+
+        text = "Blue ball:" + intToString(vals.distance_b[i]);
+        putText(result, text, vals.center_b[i],2,1,color,2);
+        circle(result, vals.center_b[i], vals.radius_b[i], color, 3, 8, 0 );
     }
 
+    imshow("Video capture",calibrated_frame);
+    imshow("Detect red in HSV",hsv_red_result);
+    imshow("Detect blue in HSV",hsv_blue_result); //show image hsv_frame_blue on "Object Detection_HSV_Blue"
+    imshow("Canny edge - red", hsv_frame_red_canny); //show image hsv_frame_red_canny on "Canny Edge for Red Ball"
+    imshow("Canny edge - blue", hsv_frame_blue_canny);
+    imshow("Result", result);
 
-    //cout << "detected red balls: " << center_r.size() << endl;
-    //cout << "detected blue balls: " << center_b.size() << endl;
+    cv::waitKey(1);
+
+    return vals;
+
+}
+
+
+
+void pub_msgs(balls_info &ball_information){
+
+    unsigned short num_r = static_cast<unsigned short>(ball_information.num_r);
+    unsigned short num_b = static_cast<unsigned short>(ball_information.num_b);
+    vector<Point2i>center_r = ball_information.center_r;
+    vector<Point2i>center_b = ball_information.center_b;
+    vector<int>radius_r = ball_information.radius_r;
+    vector<int>radius_b = ball_information.radius_b;
+    vector<short int>distance_r = ball_information.distance_r;
+    vector<short int>distance_b = ball_information.distance_b;
 
 
     core_msgs::ball_position msg_pub;
-    msg_pub.red_size = center_r.size();
-    msg_pub.blue_size = center_b.size();
-    msg_pub.red_img_x.resize(center_r.size());
-    msg_pub.red_img_y.resize(center_r.size());
-    msg_pub.red_distance.resize(center_r.size());
-    msg_pub.blue_img_x.resize(center_b.size());
-    msg_pub.blue_img_y.resize(center_b.size());
-    msg_pub.blue_distance.resize(center_b.size());
+
+    msg_pub.red_size = num_r;
+    msg_pub.blue_size = num_b;
+    msg_pub.red_img_x.resize(num_r);
+    msg_pub.red_img_y.resize(num_r);
+    msg_pub.red_distance.resize(num_r);
+    msg_pub.blue_img_x.resize(num_b);
+    msg_pub.blue_img_y.resize(num_b);
+    msg_pub.blue_distance.resize(num_b);
 
 
     visualization_msgs::Marker ball_list;  //declare marker
@@ -212,30 +257,16 @@ void ball_detect(){
     ball_list.scale.y=radius;
     ball_list.scale.z=radius;
 
-    /* step 8: draw detected balls */
     for( size_t i = 0; i< center_r.size(); i++ ){
-        Scalar color = Scalar(0 , 0, 255); //set scalar color as 255 red
-
-
         vector<float> ball_position_r; //declare float vector named ball_position_r
         ball_position_r = pixel2point_depth(center_r[i], distance_r[i]);
         float isx = ball_position_r[0];
         float isy = ball_position_r[1];
         float isz = ball_position_r[2];
-        string sx = floatToString(isx);
-        string sy = floatToString(isy);
-        string sz = floatToString(isz);
-
-
-        text = "Red ball:" + intToString(distance_r[i]);
-        //cout << "distance_r: " << distance_r[i] << endl;
-        putText(result, text, center_r[i],2,1,color,2);
-        circle(result, center_r[i], radius_r[i], color, 3, 8, 0 );
 
         msg_pub.red_img_x[i]=center_r[i].x;
         msg_pub.red_img_y[i]=center_r[i].y;
         msg_pub.red_distance[i] = distance_r[i];
-
 
         geometry_msgs::Point p;
         p.x = isx;   //p.x, p.y, p.z are the position of the balls. it should be computed with camera's intrinstic parameters
@@ -253,23 +284,11 @@ void ball_detect(){
     }
 
     for( size_t i = 0; i< center_b.size(); i++ ){ //run the loop while size_t type i from 0 to size of contours_b-1 size by increasing i 1
-        Scalar color = Scalar(255, 0, 0); //set scalar color as 255 blue
-
-
         vector<float> ball_position_b; //declare float vector named ball_position_b
         ball_position_b = pixel2point_depth(center_b[i], distance_b[i]);
         float isx = ball_position_b[0];
         float isy = ball_position_b[1];
         float isz = ball_position_b[2];
-        string sx = floatToString(isx);
-        string sy = floatToString(isy);
-        string sz = floatToString(isz);
-
-
-        text = "Blue ball:" + intToString(distance_b[i]);
-        //cout << "distance_b: " << distance_b[i] << endl;
-        putText(result, text, center_b[i],2,1,color,2);
-        circle(result, center_b[i], radius_b[i], color, 3, 8, 0 );
 
         msg_pub.blue_img_x[i]=center_b[i].x;
         msg_pub.blue_img_y[i]=center_b[i].y;
@@ -288,15 +307,6 @@ void ball_detect(){
         c.a = 1.0;
         ball_list.colors.push_back(c);
     }
-
-    imshow("Video capture",calibrated_frame);
-    imshow("Detect red in HSV",hsv_red_result);
-    imshow("Detect blue in HSV",hsv_blue_result); //show image hsv_frame_blue on "Object Detection_HSV_Blue"
-    imshow("Canny edge - red", hsv_frame_red_canny); //show image hsv_frame_red_canny on "Canny Edge for Red Ball"
-    imshow("Canny edge - blue", hsv_frame_blue_canny);
-    imshow("Result", result);
-
-    cv::waitKey(1);
 
     pub.publish(msg_pub);
     pub_markers.publish(ball_list);  //publish a marker message
@@ -342,11 +352,10 @@ vector<float> pixel2point_depth(Point2i center, int distance){
 
 vector<float> pixel2point(Point2f center, float radius){
     //get center of ball in 2d image plane and transform it into ball position in 3d camera coordinate
-    vector<float> position; //declare float type vetor na med position
+    vector<float> position;
     float x, y, u, v, Xc, Yc, Zc;
-    //decalre float type values
-    x = center.x;//.x;// .at(0);
-    y = center.y;//.y;//
+    x = center.x;
+    y = center.y;
 
     cout << "x: " << x << endl;
     cout << "y: " << y << endl;

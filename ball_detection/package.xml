@@ -1,19 +1,13 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>ball_detection</name>
-  <version>0.0.0</version>
-  <description>The ball_detection package</description>
+  <version>1.1.1</version>
+  <description>The ball_detection package based on Intel RealSense D435. It implements colorful ball detection and publishing their positions relative to the observer assisted by color and depth image from an RGB-D camera. </description>
 
-  <!-- One maintainer tag required, multiple allowed, one person per tag -->
-  <!-- Example:  -->
-  <!-- <maintainer email="jane.doe@example.com">Jane Doe</maintainer> -->
-  <maintainer email="naverlabs@todo.todo">naverlabs</maintainer>
+  <maintainer email="jongwon.lee@kaist.ac.kr">Jongwon Lee</maintainer>
 
 
-  <!-- One license tag required, multiple allowed, one license per tag -->
-  <!-- Commonly used license strings: -->
-  <!--   BSD, MIT, Boost Software License, GPLv2, GPLv3, LGPLv2.1, LGPLv3 -->
-  <license>TODO</license>
+  <license>BSD</license>
 
 
   <buildtool_depend>catkin</buildtool_depend>
@@ -27,9 +21,6 @@
   <depend>core_msgs</depend>
   <depend>visualization_msgs</depend>
 
-  <!-- The export tag contains other, unspecified, tags -->
   <export>
-    <!-- Other tools can request additional information be placed here -->
-
   </export>
 </package>

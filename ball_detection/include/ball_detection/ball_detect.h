@@ -32,8 +32,22 @@ Mat buffer_depth(480,640,CV_16UC1);
 ros::Publisher pub;
 ros::Publisher pub_markers;
 
+struct balls_info
+{
+    short int num_r;
+    short int num_b;
+    vector<Point2i>center_r;
+    vector<Point2i>center_b;
+    vector<int>radius_r;
+    vector<int>radius_b;
+    vector<short int>distance_r;
+    vector<short int>distance_b;
 
-void ball_detect();
+};
+
+
+balls_info ball_detect();
+void pub_msgs(balls_info &ball_information);
 void imageCallback(const sensor_msgs::ImageConstPtr& msg_color, const sensor_msgs::ImageConstPtr& msg_depth);
 
 /* Declaration of functions that changes data types */
@@ -75,6 +89,9 @@ double fontScale = 2;
 int thickness = 3;
 String text;
 int iMin_tracking_ball_size = 10;
+
+
+
 
 
 #endif
