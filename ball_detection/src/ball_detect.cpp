@@ -1,8 +1,9 @@
 #include "ball_detection/ball_detect.h"
 
+
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "ball_detect_node");
+    ros::init(argc, argv, "ball_detect_range_assisted");
     ros::NodeHandle nh; //create node handler
 
     message_filters::Subscriber<Image> color_sub(nh, "camera/color/image_raw", 1);
@@ -110,6 +111,10 @@ balls_info ball_detect(){
     Canny(hsv_frame_red_blur, hsv_frame_red_canny, lowThreshold_r,lowThreshold_r*ratio_r, kernel_size_r);
     Canny(hsv_frame_blue_blur, hsv_frame_blue_canny, lowThreshold_b, lowThreshold_b*ratio_b, kernel_size_b);
 
+    // dilate detected canny edges to visualize them easily
+    dilate(hsv_frame_red_canny, hsv_frame_red_canny, Mat(), Point(-1, -1));
+    dilate(hsv_frame_blue_canny, hsv_frame_blue_canny, Mat(), Point(-1, -1));
+
     /* step 6: Detect contours. Note that each contour is stored as a vector of points (e.g. std::vector<std::vector<cv::Point> >).
     the number of detected contours : n, its number of pixels: p , then the variable 'contours_r's size become n by p. (i.e. contours_r[n-1][p-1])
     */
@@ -136,7 +141,6 @@ balls_info ball_detect(){
         minEnclosingCircle( contours_b_poly[i], center_b2f[i], radius_b2f[i] );
     }
 
-
     remove_trashval(center_r2f, radius_r2f, iMin_tracking_ball_size);
     remove_trashval(center_b2f, radius_b2f, iMin_tracking_ball_size);
 
@@ -151,13 +155,14 @@ balls_info ball_detect(){
     {
         vals.center_r.push_back( cv::Point2i( static_cast<int>(center_r2f[i].x), static_cast<int>(center_r2f[i].y)  ) );
         vals.radius_r.push_back( static_cast<int>(radius_r2f[i]));
-        vals.distance_r.push_back(depth_frame.at<short int>(vals.center_r[i].y, vals.center_r[i].x));
+        vals.distance_r.push_back(depth_frame.at<short int>(vals.center_r[i].y, vals.center_r[i].x)+(int)(fball_radius*1000));
+
     }
     for (size_t i=0 ; i<vals.num_b; i++)
     {
         vals.center_b.push_back( cv::Point2i( static_cast<int>(center_b2f[i].x), static_cast<int>(center_b2f[i].y)  ) );
         vals.radius_b.push_back( static_cast<int>(radius_b2f[i]));
-        vals.distance_b.push_back(depth_frame.at<short int>(vals.center_b[i].y, vals.center_b[i].x));
+        vals.distance_b.push_back(depth_frame.at<short int>(vals.center_b[i].y, vals.center_b[i].x)+(int)(fball_radius*1000));
     }
 
 
@@ -167,6 +172,7 @@ balls_info ball_detect(){
 
         vector<float> ball_position_r; //declare float vector named ball_position_r
         ball_position_r = pixel2point_depth(vals.center_r[i], vals.distance_r[i]);
+        //ball_position_r = transform_coordinate(ball_position_r);
         float isx = ball_position_r[0];
         float isy = ball_position_r[1];
         float isz = ball_position_r[2];
@@ -185,6 +191,7 @@ balls_info ball_detect(){
 
         vector<float> ball_position_b; //declare float vector named ball_position_b
         ball_position_b = pixel2point_depth(vals.center_b[i], vals.distance_b[i]);
+        //ball_position_b = transform_coordinate(ball_position_b);
         float isx = ball_position_b[0];
         float isy = ball_position_b[1];
         float isz = ball_position_b[2];
@@ -197,12 +204,22 @@ balls_info ball_detect(){
         circle(result, vals.center_b[i], vals.radius_b[i], color, 3, 8, 0 );
     }
 
+    /*
+    moveWindow("Detect red in HSV", 50,370);
+    moveWindow("Detect blue in HSV",470,370);
+    moveWindow("Canny edge - red",50,700);
+    moveWindow("Canny edge - blue", 470,700);
+    moveWindow("Video capture",870, 370);
+    moveWindow("Result",870, 700);
+    */
+
     imshow("Video capture",calibrated_frame);
     imshow("Detect red in HSV",hsv_red_result);
     imshow("Detect blue in HSV",hsv_blue_result); //show image hsv_frame_blue on "Object Detection_HSV_Blue"
     imshow("Canny edge - red", hsv_frame_red_canny); //show image hsv_frame_red_canny on "Canny Edge for Red Ball"
     imshow("Canny edge - blue", hsv_frame_blue_canny);
     imshow("Result", result);
+
 
     cv::waitKey(1);
 
@@ -223,7 +240,7 @@ void pub_msgs(balls_info &ball_information){
     vector<short int>distance_r = ball_information.distance_r;
     vector<short int>distance_b = ball_information.distance_b;
 
-
+    /*** declare msg_pub which will be passed to other nodes ***/
     core_msgs::ball_position msg_pub;
 
     msg_pub.red_size = num_r;
@@ -235,7 +252,7 @@ void pub_msgs(balls_info &ball_information){
     msg_pub.blue_img_y.resize(num_b);
     msg_pub.blue_distance.resize(num_b);
 
-
+    /*** declare marker type message to visualize ***/
     visualization_msgs::Marker ball_list;  //declare marker
     ball_list.header.frame_id = "/camera_color_frame";  //set the frame
     ball_list.header.stamp = ros::Time::now();   //set the header. without it, the publisher may not publish.
@@ -252,7 +269,7 @@ void pub_msgs(balls_info &ball_information){
     ball_list.id = 0; //set the marker id. if you use another markers, then make them use their own unique ids
     ball_list.type = visualization_msgs::Marker::SPHERE_LIST;  //set the type of marker
 
-    double radius = 0.10; //set the radius of marker   1.0 means 1.0m, 0.001 means 1mm
+    double radius = 4*fball_radius; //set the radius of marker   1.0 means 1.0m, 0.001 means 1mm
     ball_list.scale.x=radius;
     ball_list.scale.y=radius;
     ball_list.scale.z=radius;
@@ -260,9 +277,12 @@ void pub_msgs(balls_info &ball_information){
     for( size_t i = 0; i< center_r.size(); i++ ){
         vector<float> ball_position_r; //declare float vector named ball_position_r
         ball_position_r = pixel2point_depth(center_r[i], distance_r[i]);
+        //ball_position_r = transform_coordinate(ball_position_r);
+
         float isx = ball_position_r[0];
         float isy = ball_position_r[1];
         float isz = ball_position_r[2];
+
 
         msg_pub.red_img_x[i]=center_r[i].x;
         msg_pub.red_img_y[i]=center_r[i].y;
@@ -286,9 +306,12 @@ void pub_msgs(balls_info &ball_information){
     for( size_t i = 0; i< center_b.size(); i++ ){ //run the loop while size_t type i from 0 to size of contours_b-1 size by increasing i 1
         vector<float> ball_position_b; //declare float vector named ball_position_b
         ball_position_b = pixel2point_depth(center_b[i], distance_b[i]);
+        //ball_position_b = transform_coordinate(ball_position_b);
+
         float isx = ball_position_b[0];
         float isy = ball_position_b[1];
         float isz = ball_position_b[2];
+
 
         msg_pub.blue_img_x[i]=center_b[i].x;
         msg_pub.blue_img_y[i]=center_b[i].y;
@@ -309,7 +332,7 @@ void pub_msgs(balls_info &ball_information){
     }
 
     pub.publish(msg_pub);
-    pub_markers.publish(ball_list);  //publish a marker message
+    pub_markers.publish(ball_list);
 
 }
 
@@ -328,17 +351,22 @@ string floatToString(float f){
     return buffer.str();
 }
 
-vector<float> pixel2point_depth(Point2i center, int distance){
+vector<float> pixel2point_depth(Point2i pixel_center, int distance){
     vector<float> position;
-    int x, y;
+
     float u, v, Xc, Yc, Zc;
 
-    u = (static_cast<float>(center.x)-intrinsic_data[2])/intrinsic_data[0];
-    v = (static_cast<float>(center.y)-intrinsic_data[5])/intrinsic_data[4];
+    u = (static_cast<float>(pixel_center.x)-intrinsic_data[2])/intrinsic_data[0];
+    v = (static_cast<float>(pixel_center.y)-intrinsic_data[5])/intrinsic_data[4];
 
     Zc= 1/sqrt(pow(u,2.0) + pow(v,2.0) + 1.0)*distance/1000; //compute Z value of the ball center
     Xc=u*Zc ; //calculate real x position from camera coordinate
     Yc=v*Zc ; //calculate real y position from camera coordinate
+
+    float temp;
+    temp = Yc;
+    Yc = Zc;
+    Zc = -temp;
 
     Xc=roundf(Xc * 1000) / 1000;
     Yc=roundf(Yc * 1000) / 1000;
@@ -350,20 +378,17 @@ vector<float> pixel2point_depth(Point2i center, int distance){
 }
 
 
-vector<float> pixel2point(Point2f center, float radius){
+vector<float> pixel2point(Point2f pixel_center, float pixel_radius){
     //get center of ball in 2d image plane and transform it into ball position in 3d camera coordinate
     vector<float> position;
     float x, y, u, v, Xc, Yc, Zc;
-    x = center.x;
-    y = center.y;
-
-    cout << "x: " << x << endl;
-    cout << "y: " << y << endl;
+    x = pixel_center.x;
+    y = pixel_center.y;
 
     u = (x-intrinsic_data[2])/intrinsic_data[0];
     v = (y-intrinsic_data[5])/intrinsic_data[4];
 
-    Yc= (intrinsic_data[0]*fball_radius)/(2*(float)radius) ; //compute Z value of the ball center
+    Yc= (intrinsic_data[0]*fball_radius)/(2*(float)pixel_radius) ; //compute value of the ball center
     Xc= u*Yc ; //calculate real x position from camera coordinate
     Zc= v*Yc ; //calculate real y position from camera coordinate
     Xc=roundf(Xc * 1000) / 1000; //make Xc to 4digit
@@ -373,6 +398,23 @@ vector<float> pixel2point(Point2f center, float radius){
     position.push_back(Yc);
     position.push_back(Zc);
     return position;
+}
+
+vector<float> transform_coordinate( vector<float> input ){
+    vector<float> output;
+
+    float A[] = {-0.999753, 0.0205124, -0.00850979, 0.0177763, 0.509497, -0.860289, -0.0133109, -0.860228, -0.509736};
+    float b[] = {0.60332, -0.71247, -0.35829};
+    float x = A[0]*input[0] + A[1]*input[1] + A[2]*input[2] + b[0];
+    float y = A[3]*input[0] + A[4]*input[1] + A[5]*input[2] + b[1];
+    float z = A[6]*input[0] + A[7]*input[1] + A[8]*input[2] + b[2];
+
+    output.push_back(x);
+    output.push_back(y);
+    output.push_back(z);
+
+    return output;
+
 }
 
 

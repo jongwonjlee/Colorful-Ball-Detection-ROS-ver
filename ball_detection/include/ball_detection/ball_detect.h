@@ -20,17 +20,13 @@
 #include <stdlib.h>
 #include <math.h>
 
+
+
 using namespace cv;
 using namespace std;
 using namespace sensor_msgs;
 using namespace message_filters;
 
-
-Mat buffer_color(480,640,CV_8UC3);
-Mat buffer_depth(480,640,CV_16UC1);
-
-ros::Publisher pub;
-ros::Publisher pub_markers;
 
 struct balls_info
 {
@@ -46,38 +42,48 @@ struct balls_info
 };
 
 
+
+ros::Publisher pub;
+ros::Publisher pub_markers;
+
+
+cv::Mat buffer_color(480,640,CV_8UC3);
+cv::Mat buffer_depth(480,640,CV_16UC1);
+
+
 balls_info ball_detect();
 void pub_msgs(balls_info &ball_information);
 void imageCallback(const sensor_msgs::ImageConstPtr& msg_color, const sensor_msgs::ImageConstPtr& msg_depth);
 
 /* Declaration of functions that changes data types */
-string intToString(int n);
-string floatToString(float f);
-void morphOps(Mat &thresh); // Declaration of functions that calculates the ball position from pixel position
-vector<float> pixel2point_depth(Point2i center, int distance);
-vector<float> pixel2point(Point2f center, float radius);
-string type2str(int type);
-void remove_trashval(vector<Point2f> &center, vector<float> &radius, int pixel_radius);
+std::string intToString(int n);
+std::string floatToString(float f);
+void morphOps(cv::Mat &thresh); // Declaration of functions that calculates the ball position from pixel position
+std::vector<float> pixel2point_depth(cv::Point2i pixel_center, int distance);
+std::vector<float> pixel2point(cv::Point2i pixel_center, int pixel_radius);
+std::vector<float> transform_coordinate( std::vector<float> input );
+std::string type2str(int type);
+void remove_trashval(std::vector<Point2f> &center, std::vector<float> &radius, int pixel_radius);
 
 /* trackbar part */
-int low_h_r=0, high_h_r=6, low_h2_r=167, high_h2_r=180;
-int low_s_r=90, low_v_r=102;
-int high_s_r=255, high_v_r=255;
+const int low_h_r=0, high_h_r=6, low_h2_r=167, high_h2_r=180;
+const int low_s_r=90, low_v_r=102;
+const int high_s_r=255, high_v_r=255;
 
-int low_h_b=91, low_s_b=247, low_v_b=47;
-int high_h_b=119, high_s_b=255, high_v_b=255;
+const int low_h_b=91, low_s_b=247, low_v_b=47;
+const int high_h_b=119, high_s_b=255, high_v_b=255;
 
-int lowThreshold_r = 100;
-int ratio_r = 3;
-int kernel_size_r = 3;
+const int lowThreshold_r = 100;
+const int ratio_r = 3;
+const int kernel_size_r = 3;
 
-int lowThreshold_b = 100;
-int ratio_b = 3;
-int kernel_size_b = 3;
+const int lowThreshold_b = 100;
+const int ratio_b = 3;
+const int kernel_size_b = 3;
 
 
 /* setup default parameters */
-float fball_radius = 0.073;
+const float fball_radius = 0.073;
 
 /* Initialization of variable for camera calibration paramters >>change to our own value!!!! */
 Mat distCoeffs;
@@ -85,13 +91,19 @@ float intrinsic_data[9] = {614.9002685546875, 0.0, 324.05169677734375, 0.0, 615.
 float distortion_data[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 
 /* Initialization of variable for text drawing */
-double fontScale = 2;
-int thickness = 3;
+const double fontScale = 2;
+const int thickness = 3;
+const int iMin_tracking_ball_size = 10;
 String text;
-int iMin_tracking_ball_size = 10;
+
+/*
+-0.999632 0.0169639 -0.0211625 0.149423
+0.0268748 0.514338 -0.857167 -0.0219367
+-0.00365628 -0.85742 -0.514604 0.734038
 
 
-
-
+Mat R_robottocboard = []
+*/
 
 #endif
+
