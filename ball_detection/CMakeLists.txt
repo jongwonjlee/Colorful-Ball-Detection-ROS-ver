@@ -42,9 +42,3 @@ target_link_libraries(ball_detect
   ${catkin_LIBRARIES} ${OpenCV_LIBS} ${cv_bridge_LIBRARIES}
 )
 
-
-add_executable(ball_detect_color_only src/ball_detect_color_only.cpp)
-add_dependencies(ball_detect_color_only core_msgs_generate_messages_cpp)
-target_link_libraries(ball_detect_color_only
-  ${catkin_LIBRARIES} ${OpenCV_LIBS} ${cv_bridge_LIBRARIES}
-)
