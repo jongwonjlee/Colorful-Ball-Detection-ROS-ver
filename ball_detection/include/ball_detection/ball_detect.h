@@ -72,6 +72,9 @@ private:
     float intrinsic_data[9] = {614.9002685546875, 0.0, 324.05169677734375, 0.0, 615.0999145507812, 236.6910858154297, 0.0, 0.0, 1.0};
     float distortion_data[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 
+    float rotation[9] = {0.997727, -0.022983, 0.063341, -0.066706, -0.469631, 0.880339, 0.009514, -0.882564, -0.470096};
+    float translation[3] = {-0.067329, -0.281814, 0.358612};
+
     /* Initialization of variable for text drawing */
     const double fontScale = 2;
     const int thickness = 3;
