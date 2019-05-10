@@ -47,7 +47,6 @@ private:
     cv::Mat buffer_color;
     cv::Mat buffer_depth;
     ros::Publisher pub;
-    ros::Publisher pub_markers;
     ros::NodeHandle nh;
     ros::NodeHandle nh_private_;
 

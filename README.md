@@ -1,25 +1,11 @@
-# A version for monitoring whether a camera detects ball or not, and printing out balls' location in an image coordinate.
+#A version for remote control (i.e. cannot monitor on OpenCV window) and printing out balls' positions in an image coordinate
 
+1. Clone this repository.
 
-## To run a main node (ball_detect)
+2. A message package *core_msgs* is included in this repository. If you already have the same package, please remove it.
 
-1. Move to your workspace and clone this repository.
+3. Move to your workspace directory and type ```catkin_make --pkg core_msgs```
 
-2. ```catkin_make --pkg core_msgs```
+4. ```catkin_make```
 
-3. ```catkin_make```
-
-4. Execute the main node: ```rosrun ball_detection ball_detect``` OpenCV windows will be printed out. (Of course, a camera launch file should be executed first.) Please check balls are detected well. 
-
-5. To change parameters related to the detection (i.e. HSV value...) please run ```rosrun rqt_reconfigure rqt_reconfigure``` and change them in your favor.
-
-
-## To run tf_listener
-
-1. Before get started, please follow the instruction and run a extrinsic calibration package in syntax: [this link](https://github.com/jongwonleeKAIST/tuw_marker_detection)
-
-2. While running the package above, execute a node by typing ```rosrun ball_detection tf_listener```
-
-3. Rotation and translation matrix will be printed out on a terminal. Then, please copy and paste it onto two float type array *rotation[9]* and *translation[3]* at *ball_detect.h* in an include folder.
-
-4. Recompile the whole workspace by commanding ```catkin_make```
+5. It is done. Just execute the installed package by typing ```rosrun ball_detection ball_detect``` and check whether it works. Of course, a camera lauch file should be executed in advance. Some basic parameters can be adjusted by running ```rosrun rqt_reconfigure rqt_reconfigure```

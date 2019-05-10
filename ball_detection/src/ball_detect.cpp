@@ -8,7 +8,6 @@ using namespace message_filters;
 BallDetectNode::BallDetectNode():  nh_private_ ( "~" ) {
 
     pub = nh.advertise<core_msgs::ball_position>("/ball_position", 100);
-    pub_markers = nh.advertise<visualization_msgs::Marker>("/balls",1);
 
     reconfigureServer_ = new dynamic_reconfigure::Server<ball_detection::BallDetectionConfig> ( ros::NodeHandle ( "~" ) );
     reconfigureFnc_ = boost::bind ( &BallDetectNode::callbackConfig, this,  _1);
@@ -80,14 +79,6 @@ balls_info BallDetectNode::ball_detect(){
     vector<vector<Point> > contours_b; //declare contours_b as point vector
 
     VideoCapture cap; //get image from video, May be changed to 0 for NUC
-
-
-    namedWindow("Video capture", WINDOW_NORMAL);
-    namedWindow("Detect red in HSV", WINDOW_NORMAL);
-    namedWindow("Detect blue in HSV", WINDOW_NORMAL);
-    namedWindow("Canny edge - red", WINDOW_NORMAL);
-    namedWindow("Canny edge - blue", WINDOW_NORMAL);
-    namedWindow("Result", WINDOW_NORMAL);
 
     //undistort(color_frame, calibrated_frame, intrinsic, distCoeffs);
     //result = calibrated_frame.clone();
@@ -192,65 +183,6 @@ balls_info BallDetectNode::ball_detect(){
 
     }
 
-
-    /* step 9: Draw detected balls */
-    for(size_t i = 0; i< vals.num_r; i++){
-        Scalar color = Scalar(0 , 0, 255); //set scalar color as 255 red
-
-        vector<float> ball_position_r; //declare float vector named ball_position_r
-        ball_position_r = pixel2point_depth(vals.center_r[i], vals.distance_r[i]);
-        //ball_position_r = transform_coordinate(ball_position_r);
-        float isx = ball_position_r[0];
-        float isy = ball_position_r[1];
-        float isz = ball_position_r[2];
-        string sx = floatToString(isx);
-        string sy = floatToString(isy);
-        string sz = floatToString(isz);
-
-        string text = "Red ball:" + intToString(vals.distance_r[i]);
-        putText(result, text, vals.center_r[i],2,1,color,2);
-        circle(result, vals.center_r[i], vals.radius_r[i], color, 3, 8, 0 );
-
-    }
-
-    for(size_t i = 0; i< vals.num_b; i++){ //run the loop while size_t type i from 0 to size of contours_b-1 size by increasing i 1
-        Scalar color = Scalar(255, 0, 0); //set scalar color as 255 blue
-
-        vector<float> ball_position_b; //declare float vector named ball_position_b
-        ball_position_b = pixel2point_depth(vals.center_b[i], vals.distance_b[i]);
-        //ball_position_b = transform_coordinate(ball_position_b);
-        float isx = ball_position_b[0];
-        float isy = ball_position_b[1];
-        float isz = ball_position_b[2];
-        string sx = floatToString(isx);
-        string sy = floatToString(isy);
-        string sz = floatToString(isz);
-
-        string text = "Blue ball:" + intToString(vals.distance_b[i]);
-        putText(result, text, vals.center_b[i],2,1,color,2);
-        circle(result, vals.center_b[i], vals.radius_b[i], color, 3, 8, 0 );
-    }
-
-
-    /*
-    moveWindow("Detect red in HSV", 50,370);
-    moveWindow("Detect blue in HSV",470,370);
-    moveWindow("Canny edge - red",50,700);
-    moveWindow("Canny edge - blue", 470,700);
-    moveWindow("Video capture",870, 370);
-    moveWindow("Result",870, 700);
-    */
-
-    imshow("Video capture",color_frame);
-    imshow("Detect red in HSV",hsv_red_result);
-    imshow("Detect blue in HSV",hsv_blue_result); //show image hsv_frame_blue on "Object Detection_HSV_Blue"
-    imshow("Canny edge - red", hsv_frame_red_canny); //show image hsv_frame_red_canny on "Canny Edge for Red Ball"
-    imshow("Canny edge - blue", hsv_frame_blue_canny);
-    imshow("Result", result);
-
-
-    cv::waitKey(1);
-
     return vals;
 
 }
@@ -279,28 +211,6 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
     msg_pub.blue_img_y.resize(num_b);
     msg_pub.blue_distance.resize(num_b);
 
-    /*** declare marker type message to visualize ***/
-    visualization_msgs::Marker ball_list;  //declare marker
-    ball_list.header.frame_id = "/base";  //set the frame
-    ball_list.header.stamp = ros::Time::now();   //set the header. without it, the publisher may not publish.
-    ball_list.ns = "balls";   //name of markers
-    ball_list.action = visualization_msgs::Marker::ADD;
-    ball_list.pose.position.x=0; //the transformation between the frame and camera data, just set it (0,0,0,0,0,0) for (x,y,z,roll,pitch,yaw)
-    ball_list.pose.position.y=0;
-    ball_list.pose.position.z=0;
-    ball_list.pose.orientation.x=0;
-    ball_list.pose.orientation.y=0;
-    ball_list.pose.orientation.z=0;
-    ball_list.pose.orientation.w=1.0;
-
-    ball_list.id = 0; //set the marker id. if you use another markers, then make them use their own unique ids
-    ball_list.type = visualization_msgs::Marker::SPHERE_LIST;  //set the type of marker
-
-    double radius = 2*fball_radius; //set the radius of marker   1.0 means 1.0m, 0.001 means 1mm
-    ball_list.scale.x=radius;
-    ball_list.scale.y=radius;
-    ball_list.scale.z=radius;
-
     for( size_t i = 0; i< center_r.size(); i++ ){
         vector<float> ball_position_r; //declare float vector named ball_position_r
         ball_position_r = pixel2point_depth(center_r[i], distance_r[i]);
@@ -313,19 +223,6 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
         msg_pub.red_img_x[i]=center_r[i].x;
         msg_pub.red_img_y[i]=center_r[i].y;
         msg_pub.red_distance[i] = distance_r[i];
-
-        geometry_msgs::Point p;
-        p.x = isx;   //p.x, p.y, p.z are the position of the balls. it should be computed with camera's intrinstic parameters
-        p.y = isy;
-        p.z = isz;
-        ball_list.points.push_back(p);
-
-        std_msgs::ColorRGBA c;
-        c.r = 1.0;  //set the color of the balls. You can set it respectively.
-        c.g = 0.0;
-        c.b = 0.0;
-        c.a = 1.0;
-        ball_list.colors.push_back(c);
 
     }
 
@@ -343,22 +240,9 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
         msg_pub.blue_img_y[i]=center_b[i].y;
         msg_pub.blue_distance[i] = distance_b[i];
 
-        geometry_msgs::Point p;
-        p.x = isx;   //p.x, p.y, p.z are the position of the balls. it should be computed with camera's intrinstic parameters
-        p.y = isy;
-        p.z = isz;
-        ball_list.points.push_back(p);
-
-        std_msgs::ColorRGBA c;
-        c.r = 0.0;  //set the color of the balls. You can set it respectively.
-        c.g = 0.0;
-        c.b = 1.0;
-        c.a = 1.0;
-        ball_list.colors.push_back(c);
     }
 
     pub.publish(msg_pub);
-    pub_markers.publish(ball_list);
 
 }
 
