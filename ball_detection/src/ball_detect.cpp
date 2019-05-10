@@ -272,11 +272,11 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
 
     msg_pub.red_size = num_r;
     msg_pub.blue_size = num_b;
-    msg_pub.red_img_x.resize(num_r);
-    msg_pub.red_img_y.resize(num_r);
+    msg_pub.red_x.resize(num_r);
+    msg_pub.red_y.resize(num_r);
     msg_pub.red_distance.resize(num_r);
-    msg_pub.blue_img_x.resize(num_b);
-    msg_pub.blue_img_y.resize(num_b);
+    msg_pub.blue_x.resize(num_b);
+    msg_pub.blue_y.resize(num_b);
     msg_pub.blue_distance.resize(num_b);
 
     /*** declare marker type message to visualize ***/
@@ -310,8 +310,8 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
         float isy = ball_position_r[1];
         float isz = ball_position_r[2];
 
-        msg_pub.red_img_x[i]=center_r[i].x;
-        msg_pub.red_img_y[i]=center_r[i].y;
+        msg_pub.red_x[i]=ball_position_r[0];
+        msg_pub.red_y[i]=ball_position_r[1];
         msg_pub.red_distance[i] = distance_r[i];
 
         geometry_msgs::Point p;
@@ -339,8 +339,8 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
         float isz = ball_position_b[2];
 
 
-        msg_pub.blue_img_x[i]=center_b[i].x;
-        msg_pub.blue_img_y[i]=center_b[i].y;
+        msg_pub.blue_x[i]=ball_position_b[0];
+        msg_pub.blue_y[i]=ball_position_b[1];
         msg_pub.blue_distance[i] = distance_b[i];
 
         geometry_msgs::Point p;
