@@ -13,6 +13,9 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
 #include <sensor_msgs/Image.h>
+#include <dynamic_reconfigure/server.h>
+#include "ball_detection/BallDetectionConfig.h"
+
 
 #include <opencv2/imgproc.hpp>
 #include <iostream>
@@ -48,13 +51,7 @@ private:
     ros::NodeHandle nh;
     ros::NodeHandle nh_private_;
 
-    /* trackbar part */
-    const int low_h_r=0, high_h_r=6, low_h2_r=167, high_h2_r=180;
-    const int low_s_r=90, low_v_r=102;
-    const int high_s_r=255, high_v_r=255;
-
-    const int low_h_b=91, low_s_b=247, low_v_b=47;
-    const int high_h_b=119, high_s_b=255, high_v_b=255;
+    ball_detection::BallDetectionConfig config_;
 
     const int lowThreshold_r = 100;
     const int ratio_r = 3;
@@ -65,21 +62,27 @@ private:
     const int kernel_size_b = 3;
 
     /* setup default parameters */
-    const float fball_radius = 0.073;
+    const float fball_radius = 0.073/2;
 
     /* Initialization of variable for camera calibration paramters >>change to our own value!!!! */
     cv::Mat distCoeffs;
     float intrinsic_data[9] = {614.9002685546875, 0.0, 324.05169677734375, 0.0, 615.0999145507812, 236.6910858154297, 0.0, 0.0, 1.0};
     float distortion_data[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 
-    float rotation[9] = {0.997727, -0.022983, 0.063341, -0.066706, -0.469631, 0.880339, 0.009514, -0.882564, -0.470096};
-    float translation[3] = {-0.067329, -0.281814, 0.358612};
+    /*** EXTRINSIC PARAMETERS SHOULD BE HERE!!! ***/
+    float rotation[9] = {0.997083, -0.0754944, 0.0112147, -0.0426682, -0.429536, 0.902041, -0.0632819, -0.899888, -0.431505};
+    float translation[3] = {-0.0628376, -0.0471899, 0.361587};
 
     /* Initialization of variable for text drawing */
     const double fontScale = 2;
     const int thickness = 3;
-    const int iMin_tracking_ball_size = 10;
+    const int iMin_tracking_ball_size = 5;
 
+
+    dynamic_reconfigure::Server<ball_detection::BallDetectionConfig>* reconfigureServer_; ///< parameter server stuff
+    dynamic_reconfigure::Server<ball_detection::BallDetectionConfig>::CallbackType reconfigureFnc_;///< parameter server stuff
+
+    void callbackConfig (ball_detection::BallDetectionConfig &_config); ///< callback function on incoming parameter changes
     void imageCallback(const sensor_msgs::ImageConstPtr& msg_color, const sensor_msgs::ImageConstPtr& msg_depth);
     balls_info ball_detect();
     void pub_msgs(balls_info &ball_information);
@@ -87,8 +90,10 @@ private:
     std::vector<float> pixel2point_depth(cv::Point2i pixel_center, int distance);
     std::vector<float> pixel2point(cv::Point2i pixel_center, int pixel_radius);
     std::vector<float> transform_coordinate( std::vector<float> input );
-    void morphOps(cv::Mat &thresh); // Declaration of functions that calculates the ball position from pixel position
+    void morphOps(cv::Mat &thresh);
     void remove_trashval(std::vector<cv::Point2f> &center, std::vector<float> &radius, int pixel_radius);
+    short int calibrate_rangeinfo(short x);
+    short int lookup_range(int y, int x, cv::Mat& range_frame);
 
 };
 
@@ -97,16 +102,5 @@ private:
 std::string intToString(int n);
 std::string floatToString(float f);
 std::string type2str(int type);
-
-
-
-/*
--0.999632 0.0169639 -0.0211625 0.149423
-0.0268748 0.514338 -0.857167 -0.0219367
--0.00365628 -0.85742 -0.514604 0.734038
-
-
-Mat R_robottocboard = []
-*/
 
 #endif

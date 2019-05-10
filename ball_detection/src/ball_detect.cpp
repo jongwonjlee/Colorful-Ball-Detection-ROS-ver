@@ -5,18 +5,28 @@ using namespace std;
 using namespace sensor_msgs;
 using namespace message_filters;
 
-BallDetectNode::BallDetectNode(){
+BallDetectNode::BallDetectNode():  nh_private_ ( "~" ) {
 
     pub = nh.advertise<core_msgs::ball_position>("/ball_position", 100);
+    pub_markers = nh.advertise<visualization_msgs::Marker>("/balls",1);
+
+    reconfigureServer_ = new dynamic_reconfigure::Server<ball_detection::BallDetectionConfig> ( ros::NodeHandle ( "~" ) );
+    reconfigureFnc_ = boost::bind ( &BallDetectNode::callbackConfig, this,  _1);
+    reconfigureServer_->setCallback ( reconfigureFnc_ );
 
     message_filters::Subscriber<Image> color_sub(nh, "camera/color/image_raw", 1);
     message_filters::Subscriber<Image> depth_sub(nh, "camera/aligned_depth_to_color/image_raw", 1);
     TimeSynchronizer<Image, Image> sync(color_sub, depth_sub, 10);
+
     sync.registerCallback(boost::bind(&BallDetectNode::imageCallback, this, _1, _2));
 
     ros::spin();
 }
 
+
+void BallDetectNode::callbackConfig (ball_detection::BallDetectionConfig &_config){
+    config_ = _config;
+}
 
 void BallDetectNode::imageCallback(const sensor_msgs::ImageConstPtr& msg_color, const sensor_msgs::ImageConstPtr& msg_depth)
 {
@@ -43,7 +53,6 @@ void BallDetectNode::imageCallback(const sensor_msgs::ImageConstPtr& msg_color, 
 
 balls_info BallDetectNode::ball_detect(){
     Mat color_frame, depth_frame, bgr_frame, hsv_frame, hsv_frame_red, hsv_frame_red1, hsv_frame_red2, hsv_frame_blue, hsv_frame_red_blur, hsv_frame_blue_blur, hsv_frame_red_canny, hsv_frame_blue_canny, result; //declare matrix for frames and result
-    Mat calibrated_frame;
 
     //Copy buffer image to frame. If the size of the orignal image(cv::Mat buffer) is 320x240, then resize the image to save (cv::Mat frame) it to 640x480
     if(buffer_color.size().width==320){
@@ -72,10 +81,19 @@ balls_info BallDetectNode::ball_detect(){
 
     VideoCapture cap; //get image from video, May be changed to 0 for NUC
 
-    //undistort(frame, calibrated_frame, intrinsic, distCoeffs);
-    //result = calibrated_frame.clone(); //deep copy calibrated_frame to result
 
-    calibrated_frame = color_frame.clone();
+    namedWindow("Video capture", WINDOW_NORMAL);
+    namedWindow("Detect red in HSV", WINDOW_NORMAL);
+    namedWindow("Detect blue in HSV", WINDOW_NORMAL);
+    namedWindow("Canny edge - red", WINDOW_NORMAL);
+    namedWindow("Canny edge - blue", WINDOW_NORMAL);
+    namedWindow("Result", WINDOW_NORMAL);
+
+    //undistort(color_frame, calibrated_frame, intrinsic, distCoeffs);
+    //result = calibrated_frame.clone();
+    //calibrated_frame = color_frame.clone();
+
+    Mat& calibrated_frame = color_frame; // since an input image is undistorted already, WE JUST USE IT.
     result = calibrated_frame.clone();
 
     /* step 1: blur it */
@@ -84,10 +102,11 @@ balls_info BallDetectNode::ball_detect(){
     /* step 2: convert bgr colorspace to hsv and apply threshold filter */
     cvtColor(calibrated_frame, hsv_frame, cv::COLOR_BGR2HSV);
     // From now on, all matrices are 8UC1 encoded.
-    inRange(hsv_frame,Scalar(low_h_r,low_s_r,low_v_r),Scalar(high_h_r,high_s_r,high_v_r),hsv_frame_red1);
-    inRange(hsv_frame,Scalar(low_h2_r,low_s_r,low_v_r),Scalar(high_h2_r,high_s_r,high_v_r),hsv_frame_red2);
-    inRange(hsv_frame,Scalar(low_h_b,low_s_b,low_v_b),Scalar(high_h_b,high_s_b,high_v_b),hsv_frame_blue);
+    inRange(hsv_frame,Scalar(config_.low_h_r,config_.low_s_r,config_.low_v_r),Scalar(config_.high_h_r,config_.high_s_r,config_.high_v_r),hsv_frame_red1);
+    inRange(hsv_frame,Scalar(config_.low_h2_r,config_.low_s_r,config_.low_v_r),Scalar(config_.high_h2_r,config_.high_s_r,config_.high_v_r),hsv_frame_red2);
+    inRange(hsv_frame,Scalar(config_.low_h_b,config_.low_s_b,config_.low_v_b),Scalar(config_.high_h_b,config_.high_s_b,config_.high_v_b),hsv_frame_blue);
     addWeighted(hsv_frame_red1, 1.0, hsv_frame_red2, 1.0, 0.0,hsv_frame_red); //merge two frames(hsv_frame_red1, hsv_frame_red2) ratio of 1:1 add scalar 0, output to hsv_frame_red
+
 
     /* step 3: apply morphOps function to the colorwise-filtered images */
     //morphOps(hsv_frame_red); //apply function morphOps to hsv_frame_red
@@ -116,6 +135,8 @@ balls_info BallDetectNode::ball_detect(){
     */
     findContours(hsv_frame_red_canny, contours_r, hierarchy_r,RETR_CCOMP, CHAIN_APPROX_SIMPLE, Point(0, 0)); //find contour from hsv_frame_red_canny to contours_r, optional output vector(containing image topology) hierarchy_r, contour retrieval mode: RETER_CCOMP, contour approximationmethod: CHAIN_APPROX_SIMPLE, shift point (0,0)(don't shift the point)
     findContours(hsv_frame_blue_canny, contours_b, hierarchy_b,RETR_CCOMP, CHAIN_APPROX_SIMPLE, Point(0, 0));
+
+
 
     /* step 7: With detected contours above, estimate each contour's center and radius. */
     vector<vector<Point> > contours_r_poly( contours_r.size() );
@@ -152,15 +173,83 @@ balls_info BallDetectNode::ball_detect(){
     {
         vals.center_r.push_back( cv::Point2i( (int)(center_r2f[i].x), (int)(center_r2f[i].y) ) );
         vals.radius_r.push_back( (int)(radius_r2f[i]));
-        vals.distance_r.push_back(depth_frame.at<short int>(vals.center_r[i].y, vals.center_r[i].x)+(int)(fball_radius*1000));
+
+        int x = vals.center_r[i].x;
+        int y = vals.center_r[i].y;
+
+        vals.distance_r.push_back(calibrate_rangeinfo(lookup_range(y,x,depth_frame)));
 
     }
     for (int i=0 ; i<vals.num_b; i++)
     {
         vals.center_b.push_back( cv::Point2i( (int)(center_b2f[i].x), (int)(center_b2f[i].y) ) );
         vals.radius_b.push_back( (int)(radius_b2f[i]));
-        vals.distance_b.push_back(depth_frame.at<short int>(vals.center_b[i].y, vals.center_b[i].x)+(int)(fball_radius*1000));
+
+        int x = vals.center_b[i].x;
+        int y = vals.center_b[i].y;
+
+        vals.distance_b.push_back(calibrate_rangeinfo(lookup_range(y,x,depth_frame)));
+
     }
+
+
+    /* step 9: Draw detected balls */
+    for(size_t i = 0; i< vals.num_r; i++){
+        Scalar color = Scalar(0 , 0, 255); //set scalar color as 255 red
+
+        vector<float> ball_position_r; //declare float vector named ball_position_r
+        ball_position_r = pixel2point_depth(vals.center_r[i], vals.distance_r[i]);
+        //ball_position_r = transform_coordinate(ball_position_r);
+        float isx = ball_position_r[0];
+        float isy = ball_position_r[1];
+        float isz = ball_position_r[2];
+        string sx = floatToString(isx);
+        string sy = floatToString(isy);
+        string sz = floatToString(isz);
+
+        string text = "Red ball:" + intToString(vals.distance_r[i]);
+        putText(result, text, vals.center_r[i],2,1,color,2);
+        circle(result, vals.center_r[i], vals.radius_r[i], color, 3, 8, 0 );
+
+    }
+
+    for(size_t i = 0; i< vals.num_b; i++){ //run the loop while size_t type i from 0 to size of contours_b-1 size by increasing i 1
+        Scalar color = Scalar(255, 0, 0); //set scalar color as 255 blue
+
+        vector<float> ball_position_b; //declare float vector named ball_position_b
+        ball_position_b = pixel2point_depth(vals.center_b[i], vals.distance_b[i]);
+        //ball_position_b = transform_coordinate(ball_position_b);
+        float isx = ball_position_b[0];
+        float isy = ball_position_b[1];
+        float isz = ball_position_b[2];
+        string sx = floatToString(isx);
+        string sy = floatToString(isy);
+        string sz = floatToString(isz);
+
+        string text = "Blue ball:" + intToString(vals.distance_b[i]);
+        putText(result, text, vals.center_b[i],2,1,color,2);
+        circle(result, vals.center_b[i], vals.radius_b[i], color, 3, 8, 0 );
+    }
+
+
+    /*
+    moveWindow("Detect red in HSV", 50,370);
+    moveWindow("Detect blue in HSV",470,370);
+    moveWindow("Canny edge - red",50,700);
+    moveWindow("Canny edge - blue", 470,700);
+    moveWindow("Video capture",870, 370);
+    moveWindow("Result",870, 700);
+    */
+
+    imshow("Video capture",color_frame);
+    imshow("Detect red in HSV",hsv_red_result);
+    imshow("Detect blue in HSV",hsv_blue_result); //show image hsv_frame_blue on "Object Detection_HSV_Blue"
+    imshow("Canny edge - red", hsv_frame_red_canny); //show image hsv_frame_red_canny on "Canny Edge for Red Ball"
+    imshow("Canny edge - blue", hsv_frame_blue_canny);
+    imshow("Result", result);
+
+
+    cv::waitKey(1);
 
     return vals;
 
@@ -190,6 +279,27 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
     msg_pub.blue_img_y.resize(num_b);
     msg_pub.blue_distance.resize(num_b);
 
+    /*** declare marker type message to visualize ***/
+    visualization_msgs::Marker ball_list;  //declare marker
+    ball_list.header.frame_id = "/base";  //set the frame
+    ball_list.header.stamp = ros::Time::now();   //set the header. without it, the publisher may not publish.
+    ball_list.ns = "balls";   //name of markers
+    ball_list.action = visualization_msgs::Marker::ADD;
+    ball_list.pose.position.x=0; //the transformation between the frame and camera data, just set it (0,0,0,0,0,0) for (x,y,z,roll,pitch,yaw)
+    ball_list.pose.position.y=0;
+    ball_list.pose.position.z=0;
+    ball_list.pose.orientation.x=0;
+    ball_list.pose.orientation.y=0;
+    ball_list.pose.orientation.z=0;
+    ball_list.pose.orientation.w=1.0;
+
+    ball_list.id = 0; //set the marker id. if you use another markers, then make them use their own unique ids
+    ball_list.type = visualization_msgs::Marker::SPHERE_LIST;  //set the type of marker
+
+    double radius = 2*fball_radius; //set the radius of marker   1.0 means 1.0m, 0.001 means 1mm
+    ball_list.scale.x=radius;
+    ball_list.scale.y=radius;
+    ball_list.scale.z=radius;
 
     for( size_t i = 0; i< center_r.size(); i++ ){
         vector<float> ball_position_r; //declare float vector named ball_position_r
@@ -200,10 +310,22 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
         float isy = ball_position_r[1];
         float isz = ball_position_r[2];
 
-
         msg_pub.red_img_x[i]=center_r[i].x;
         msg_pub.red_img_y[i]=center_r[i].y;
         msg_pub.red_distance[i] = distance_r[i];
+
+        geometry_msgs::Point p;
+        p.x = isx;   //p.x, p.y, p.z are the position of the balls. it should be computed with camera's intrinstic parameters
+        p.y = isy;
+        p.z = isz;
+        ball_list.points.push_back(p);
+
+        std_msgs::ColorRGBA c;
+        c.r = 1.0;  //set the color of the balls. You can set it respectively.
+        c.g = 0.0;
+        c.b = 0.0;
+        c.a = 1.0;
+        ball_list.colors.push_back(c);
 
     }
 
@@ -221,9 +343,22 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
         msg_pub.blue_img_y[i]=center_b[i].y;
         msg_pub.blue_distance[i] = distance_b[i];
 
+        geometry_msgs::Point p;
+        p.x = isx;   //p.x, p.y, p.z are the position of the balls. it should be computed with camera's intrinstic parameters
+        p.y = isy;
+        p.z = isz;
+        ball_list.points.push_back(p);
+
+        std_msgs::ColorRGBA c;
+        c.r = 0.0;  //set the color of the balls. You can set it respectively.
+        c.g = 0.0;
+        c.b = 1.0;
+        c.a = 1.0;
+        ball_list.colors.push_back(c);
     }
 
     pub.publish(msg_pub);
+    pub_markers.publish(ball_list);
 
 }
 
@@ -329,6 +464,44 @@ void BallDetectNode::remove_trashval(vector<Point2f> &center, vector<float> &rad
     center = temp_center;
 
 }
+
+
+short int BallDetectNode::calibrate_rangeinfo(short int x){
+    short int y = 1/config_.a * (x - config_.b);
+    return y;
+
+}
+
+
+short int BallDetectNode::lookup_range(int y, int x, cv::Mat& range_frame){
+
+
+    if(range_frame.at<short int>(y,x) < 1000) return range_frame.at<short int>(y,x)+(short int)(fball_radius*1000); // 1000 [mm] denotes the threshold of the adaptive range lookup method.
+    else {
+
+    Mat roi = range_frame(Rect(max(0,x-1),max(0,y-1),min(range_frame.cols-x,3),min(range_frame.rows-y,3)));
+
+    short int sum = 0;
+    int count = 0;
+
+    for ( int i=0;i<roi.rows;i++) {
+        for ( int j=0;j<roi.cols;j++) {
+            if( roi.at<short int>(i,j) != (short int)(0)){
+                sum += roi.at<short int>(i,j);
+                count ++;
+            }
+        }
+    }
+
+    short int d;
+    if(count == (short int)(0)) d = 0;
+    else d = sum/(short int)(count);
+
+    d += (short int)(fball_radius*1000);
+    return d;
+
+    }
+};
 
 
 // functions which change data type
