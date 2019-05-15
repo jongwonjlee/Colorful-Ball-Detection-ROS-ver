@@ -1,4 +1,4 @@
-# A version for monitoring whether a camera detects ball or not, and printing out balls' location relative to a robot coordinate.
+# A version for remote control (i.e. cannot monitor on OpenCV window) and printing out balls' positions relative to a robot coordinate.
 
 
 ## To run tf_listener
