@@ -218,7 +218,7 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
 
         msg_pub.red_x[i]=static_cast<int>(ball_position_r[0]*1000);
         msg_pub.red_y[i]=static_cast<int>(ball_position_r[1]*1000);
-        msg_pub.red_distance[i] = static_cast<int>(distance_r[i]*1000);
+        msg_pub.red_distance[i] = distance_r[i];
 
     }
 
@@ -229,7 +229,7 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
 
         msg_pub.blue_x[i]=static_cast<int>(ball_position_b[0]*1000);
         msg_pub.blue_y[i]=static_cast<int>(ball_position_b[1]*1000);
-        msg_pub.blue_distance[i] = static_cast<int>(distance_b[i]);
+        msg_pub.blue_distance[i] = distance_b[i];
     }
 
     pub.publish(msg_pub);
