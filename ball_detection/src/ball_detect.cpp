@@ -52,7 +52,8 @@ void BallDetectNode::imageCallback(const sensor_msgs::ImageConstPtr& msg_color, 
 
 
 balls_info BallDetectNode::ball_detect(){
-    Mat color_frame, depth_frame, bgr_frame, hsv_frame, hsv_frame_red, hsv_frame_red1, hsv_frame_red2, hsv_frame_blue, hsv_frame_red_blur, hsv_frame_blue_blur, hsv_frame_red_canny, hsv_frame_blue_canny, result; //declare matrix for frames and result
+    Mat color_frame, depth_frame, bgr_frame, hsv_frame, hsv_frame_red, hsv_frame_red1, hsv_frame_red2, hsv_frame_blue, hsv_frame_green, \
+            hsv_frame_red_canny, hsv_frame_blue_canny, hsv_frame_green_canny, result; //declare matrix for frames and result
 
     //Copy buffer image to frame. If the size of the orignal image(cv::Mat buffer) is 320x240, then resize the image to save (cv::Mat frame) it to 640x480
     if(buffer_color.size().width==320){
@@ -76,8 +77,10 @@ balls_info BallDetectNode::ball_detect(){
     distCoeffs = Mat(1, 5, CV_32F, distortion_data); //put distortion_data to disCoeffs matrix
     vector<Vec4i> hierarchy_r; //declare hierachy_r as 4 element vector(line)
     vector<Vec4i> hierarchy_b; //declare hierachy_b as 4 element vector(line)
+    vector<Vec4i> hierarchy_g; //declare hierachy_g as 4 element vector(line)
     vector<vector<Point> > contours_r; //declare contours_r as point vector
     vector<vector<Point> > contours_b; //declare contours_b as point vector
+    vector<vector<Point> > contours_g; //declare contours_b as point vector
 
     VideoCapture cap; //get image from video, May be changed to 0 for NUC
 
@@ -85,8 +88,10 @@ balls_info BallDetectNode::ball_detect(){
     namedWindow("Video capture", WINDOW_NORMAL);
     namedWindow("Detect red in HSV", WINDOW_NORMAL);
     namedWindow("Detect blue in HSV", WINDOW_NORMAL);
+    namedWindow("Detect green in HSV", WINDOW_NORMAL);
     namedWindow("Canny edge - red", WINDOW_NORMAL);
     namedWindow("Canny edge - blue", WINDOW_NORMAL);
+    namedWindow("Canny edge - green", WINDOW_NORMAL);
     namedWindow("Result", WINDOW_NORMAL);
 
     //undistort(color_frame, calibrated_frame, intrinsic, distCoeffs);
@@ -105,6 +110,7 @@ balls_info BallDetectNode::ball_detect(){
     inRange(hsv_frame,Scalar(config_.low_h_r,config_.low_s_r,config_.low_v_r),Scalar(config_.high_h_r,config_.high_s_r,config_.high_v_r),hsv_frame_red1);
     inRange(hsv_frame,Scalar(config_.low_h2_r,config_.low_s_r,config_.low_v_r),Scalar(config_.high_h2_r,config_.high_s_r,config_.high_v_r),hsv_frame_red2);
     inRange(hsv_frame,Scalar(config_.low_h_b,config_.low_s_b,config_.low_v_b),Scalar(config_.high_h_b,config_.high_s_b,config_.high_v_b),hsv_frame_blue);
+    inRange(hsv_frame,Scalar(config_.low_h_g,config_.low_s_g,config_.low_v_g),Scalar(config_.high_h_g,config_.high_s_g,config_.high_v_g),hsv_frame_green);
     addWeighted(hsv_frame_red1, 1.0, hsv_frame_red2, 1.0, 0.0,hsv_frame_red); //merge two frames(hsv_frame_red1, hsv_frame_red2) ratio of 1:1 add scalar 0, output to hsv_frame_red
 
 
@@ -113,39 +119,47 @@ balls_info BallDetectNode::ball_detect(){
     //morphOps(hsv_frame_blue); //apply function morphOps to hsv_frame_blue
 
 
-    Mat hsv_red_result, hsv_blue_result;
+    Mat hsv_red_result, hsv_blue_result, hsv_green_result;
     bitwise_and(calibrated_frame, calibrated_frame, hsv_red_result, hsv_frame_red); // input1, input2, result, mask (hsv_frame is a return of inRange, which prints out binary array
     bitwise_and(calibrated_frame, calibrated_frame, hsv_blue_result, hsv_frame_blue); // input1, input2, result, mask (hsv_frame is a return of inRange, which prints out binary array
+    bitwise_and(calibrated_frame, calibrated_frame, hsv_green_result, hsv_frame_green); // input1, input2, result, mask (hsv_frame is a return of inRange, which prints out binary array
 
 
     /* step 4: apply gaussian blur to the binary image ;  */
-    GaussianBlur(hsv_frame_red, hsv_frame_red_blur, cv::Size(9, 9),2, 2); //gaussian blur; input: hsv_frame_red, output: hsv_frame_red_blur, gaussian kernel
-    GaussianBlur(hsv_frame_blue, hsv_frame_blue_blur, cv::Size(9,9), 2, 2); //gaussian blur; input: hsv_blue_red, output: hsv_frame_blue_blur, gaussian kernel
+    GaussianBlur(hsv_frame_red, hsv_frame_red, cv::Size(9, 9),2, 2); //gaussian blur; input: hsv_frame_red, output: hsv_frame_red_blur, gaussian kernel
+    GaussianBlur(hsv_frame_blue, hsv_frame_blue, cv::Size(9,9), 2, 2); //gaussian blur; input: hsv_frame_blue, output: hsv_frame_blue_blur, gaussian kernel
+    GaussianBlur(hsv_frame_green, hsv_frame_green, cv::Size(9,9), 2, 2); //gaussian blur; input: hsv_frame_green, output: hsv_frame_green_blur, gaussian kernel
 
     /* step 5: edge detection */
-    Canny(hsv_frame_red_blur, hsv_frame_red_canny, lowThreshold_r,lowThreshold_r*ratio_r, kernel_size_r);
-    Canny(hsv_frame_blue_blur, hsv_frame_blue_canny, lowThreshold_b, lowThreshold_b*ratio_b, kernel_size_b);
+    Canny(hsv_frame_red, hsv_frame_red_canny, lowThreshold_r,lowThreshold_r*ratio_r, kernel_size_r);
+    Canny(hsv_frame_blue, hsv_frame_blue_canny, lowThreshold_b, lowThreshold_b*ratio_b, kernel_size_b);
+    Canny(hsv_frame_green, hsv_frame_green_canny, lowThreshold_g, lowThreshold_g*ratio_g, kernel_size_g);
 
     // dilate detected canny edges to visualize them easily
     dilate(hsv_frame_red_canny, hsv_frame_red_canny, Mat(), Point(-1, -1));
     dilate(hsv_frame_blue_canny, hsv_frame_blue_canny, Mat(), Point(-1, -1));
+    dilate(hsv_frame_green_canny, hsv_frame_green_canny, Mat(), Point(-1, -1));
 
     /* step 6: Detect contours. Note that each contour is stored as a vector of points (e.g. std::vector<std::vector<cv::Point> >).
     the number of detected contours : n, its number of pixels: p , then the variable 'contours_r's size become n by p. (i.e. contours_r[n-1][p-1])
     */
     findContours(hsv_frame_red_canny, contours_r, hierarchy_r,RETR_CCOMP, CHAIN_APPROX_SIMPLE, Point(0, 0)); //find contour from hsv_frame_red_canny to contours_r, optional output vector(containing image topology) hierarchy_r, contour retrieval mode: RETER_CCOMP, contour approximationmethod: CHAIN_APPROX_SIMPLE, shift point (0,0)(don't shift the point)
     findContours(hsv_frame_blue_canny, contours_b, hierarchy_b,RETR_CCOMP, CHAIN_APPROX_SIMPLE, Point(0, 0));
-
+    findContours(hsv_frame_green_canny, contours_g, hierarchy_g,RETR_CCOMP, CHAIN_APPROX_SIMPLE, Point(0, 0));
 
 
     /* step 7: With detected contours above, estimate each contour's center and radius. */
     vector<vector<Point> > contours_r_poly( contours_r.size() );
     vector<vector<Point> > contours_b_poly( contours_b.size() );
+    vector<vector<Point> > contours_g_poly( contours_g.size() );
     vector<Point2f>center_r2f( contours_r.size() );
     vector<Point2f>center_b2f( contours_b.size() );
+    vector<Point2f>center_g2f( contours_g.size() );
 
     vector<float>radius_r2f( contours_r.size() ); //set radius_r as float type vector size of contours_r
     vector<float>radius_b2f( contours_b.size() ); //set radius_b as float type vector size of contours_b
+    vector<float>radius_g2f( contours_g.size() ); //set radius_g as float type vector size of contours_g
+
     for( size_t i = 0; i < contours_r.size(); i++ ){
         approxPolyDP( contours_r[i], contours_r_poly[i], 3, true ); //approximate contours_r[i] to a smoother polygon and put output in contours_r_poly[i] with approximation accuracy 3 (pixelwise distance between the original and approximated point)
         minEnclosingCircle( contours_r_poly[i], center_r2f[i], radius_r2f[i] ); //get position of the polygon's center and its radius from minimum enclosing circle from contours_r_poly[i]
@@ -155,19 +169,24 @@ balls_info BallDetectNode::ball_detect(){
         approxPolyDP( contours_b[i], contours_b_poly[i], 3, true );
         minEnclosingCircle( contours_b_poly[i], center_b2f[i], radius_b2f[i] );
     }
+    for( size_t i = 0; i < contours_g.size(); i++ ){
+        //run the loop while size_t type i from 0 to size of contours_g-1 size by increasing i 1
+        approxPolyDP( contours_g[i], contours_g_poly[i], 3, true );
+        minEnclosingCircle( contours_g_poly[i], center_g2f[i], radius_g2f[i] );
+    }
 
     remove_trashval(center_r2f, radius_r2f, iMin_tracking_ball_size);
     remove_trashval(center_b2f, radius_b2f, iMin_tracking_ball_size);
+    remove_trashval(center_g2f, radius_g2f, iMin_tracking_ball_size);
 
 
     /* Step 8: Push data into the return value. */
     balls_info vals;
 
-    //vals.num_r = static_cast<size_t>(center_r2f.size());
-    //vals.num_b = static_cast<size_t>(center_b2f.size());
-
     vals.num_r = (int)(center_r2f.size());
     vals.num_b = (int)(center_b2f.size());
+    vals.num_g = (int)(center_g2f.size());
+
 
     for (int i=0 ; i<vals.num_r; i++)
     {
@@ -178,7 +197,6 @@ balls_info BallDetectNode::ball_detect(){
         int y = vals.center_r[i].y;
 
         vals.distance_r.push_back(calibrate_rangeinfo(lookup_range(y,x,depth_frame)));
-
     }
     for (int i=0 ; i<vals.num_b; i++)
     {
@@ -189,7 +207,17 @@ balls_info BallDetectNode::ball_detect(){
         int y = vals.center_b[i].y;
 
         vals.distance_b.push_back(calibrate_rangeinfo(lookup_range(y,x,depth_frame)));
+    }
 
+    for (int i=0 ; i<vals.num_g; i++)
+    {
+        vals.center_g.push_back( cv::Point2i( (int)(center_g2f[i].x), (int)(center_g2f[i].y) ) );
+        vals.radius_g.push_back( (int)(radius_g2f[i]));
+
+        int x = vals.center_g[i].x;
+        int y = vals.center_g[i].y;
+
+        vals.distance_g.push_back(calibrate_rangeinfo(lookup_range(y,x,depth_frame)));
     }
 
 
@@ -231,23 +259,45 @@ balls_info BallDetectNode::ball_detect(){
         circle(result, vals.center_b[i], vals.radius_b[i], color, 3, 8, 0 );
     }
 
+    for(size_t i = 0; i< vals.num_g; i++){ //run the loop while size_t type i from 0 to size of contours_g-1 size by increasing i 1
+        Scalar color = Scalar(0, 255, 0); //set scalar color as 255 green
 
-    /*
-    moveWindow("Detect red in HSV", 50,370);
-    moveWindow("Detect blue in HSV",470,370);
-    moveWindow("Canny edge - red",50,700);
-    moveWindow("Canny edge - blue", 470,700);
-    moveWindow("Video capture",870, 370);
-    moveWindow("Result",870, 700);
-    */
+        vector<float> ball_position_g; //declare float vector named ball_position_g
+        ball_position_g = pixel2point_depth(vals.center_g[i], vals.distance_g[i]);
+        //ball_position_g = transform_coordinate(ball_position_g);
+        float isx = ball_position_g[0];
+        float isy = ball_position_g[1];
+        float isz = ball_position_g[2];
+        string sx = floatToString(isx);
+        string sy = floatToString(isy);
+        string sz = floatToString(isz);
+
+        string text = "Green ball:" + intToString(vals.distance_g[i]);
+        putText(result, text, vals.center_g[i],2,1,color,2);
+        circle(result, vals.center_g[i], vals.radius_g[i], color, 3, 8, 0 );
+    }
+
+
+
+
+    moveWindow("Detect red in HSV", 50,50);
+    moveWindow("Detect blue in HSV",450,50);
+    moveWindow("Detect green in HSV",850,50);
+    moveWindow("Canny edge - red",50,450);
+    moveWindow("Canny edge - blue", 450,450);
+    moveWindow("Canny edge - green", 850,450);
+    moveWindow("Video capture",1250,50);
+    moveWindow("Result",1250,450);
+
 
     imshow("Video capture",color_frame);
     imshow("Detect red in HSV",hsv_red_result);
     imshow("Detect blue in HSV",hsv_blue_result); //show image hsv_frame_blue on "Object Detection_HSV_Blue"
+    imshow("Detect green in HSV",hsv_green_result);
     imshow("Canny edge - red", hsv_frame_red_canny); //show image hsv_frame_red_canny on "Canny Edge for Red Ball"
     imshow("Canny edge - blue", hsv_frame_blue_canny);
+    imshow("Canny edge - green", hsv_frame_green_canny);
     imshow("Result", result);
-
 
     cv::waitKey(1);
 
@@ -260,24 +310,32 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
 
     unsigned short num_r = static_cast<unsigned short>(ball_information.num_r);
     unsigned short num_b = static_cast<unsigned short>(ball_information.num_b);
+    unsigned short num_g = static_cast<unsigned short>(ball_information.num_g);
     vector<Point2i>center_r = ball_information.center_r;
     vector<Point2i>center_b = ball_information.center_b;
+    vector<Point2i>center_g = ball_information.center_g;
     vector<int>radius_r = ball_information.radius_r;
     vector<int>radius_b = ball_information.radius_b;
+    vector<int>radius_g = ball_information.radius_g;
     vector<short int>distance_r = ball_information.distance_r;
     vector<short int>distance_b = ball_information.distance_b;
+    vector<short int>distance_g = ball_information.distance_g;
 
     /*** declare msg_pub which will be passed to other nodes ***/
     core_msgs::ball_position msg_pub;
 
     msg_pub.red_size = num_r;
     msg_pub.blue_size = num_b;
+    msg_pub.green_size = num_g;
     msg_pub.red_x.resize(num_r);
     msg_pub.red_y.resize(num_r);
     msg_pub.red_distance.resize(num_r);
     msg_pub.blue_x.resize(num_b);
     msg_pub.blue_y.resize(num_b);
     msg_pub.blue_distance.resize(num_b);
+    msg_pub.green_x.resize(num_g);
+    msg_pub.green_y.resize(num_g);
+    msg_pub.green_distance.resize(num_g);
 
     /*** declare marker type message to visualize ***/
     visualization_msgs::Marker ball_list;  //declare marker
@@ -310,8 +368,8 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
         float isy = ball_position_r[1];
         float isz = ball_position_r[2];
 
-        msg_pub.red_x[i]=ball_position_r[0];
-        msg_pub.red_y[i]=ball_position_r[1];
+        msg_pub.red_x[i]=(short int)(1000*ball_position_r[0]);
+        msg_pub.red_y[i]=(short int)(1000*ball_position_r[1]);
         msg_pub.red_distance[i] = distance_r[i];
 
         geometry_msgs::Point p;
@@ -339,8 +397,8 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
         float isz = ball_position_b[2];
 
 
-        msg_pub.blue_x[i]=ball_position_b[0];
-        msg_pub.blue_y[i]=ball_position_b[1];
+        msg_pub.blue_x[i]=(short int)(1000*ball_position_b[0]);
+        msg_pub.blue_y[i]=(short int)(1000*ball_position_b[1]);
         msg_pub.blue_distance[i] = distance_b[i];
 
         geometry_msgs::Point p;
@@ -353,6 +411,34 @@ void BallDetectNode::pub_msgs(balls_info &ball_information){
         c.r = 0.0;  //set the color of the balls. You can set it respectively.
         c.g = 0.0;
         c.b = 1.0;
+        c.a = 1.0;
+        ball_list.colors.push_back(c);
+    }
+
+    for( size_t i = 0; i< center_g.size(); i++ ){ //run the loop while size_t type i from 0 to size of contours_g-1 size by increasing i 1
+        vector<float> ball_position_g; //declare float vector named ball_position_g
+        ball_position_g = pixel2point_depth(center_g[i], distance_g[i]);
+        ball_position_g = transform_coordinate(ball_position_g);
+
+        float isx = ball_position_g[0];
+        float isy = ball_position_g[1];
+        float isz = ball_position_g[2];
+
+
+        msg_pub.green_x[i]=(short int)(1000*ball_position_g[0]);
+        msg_pub.green_y[i]=(short int)(1000*ball_position_g[1]);
+        msg_pub.green_distance[i] = distance_g[i];
+
+        geometry_msgs::Point p;
+        p.x = isx;   //p.x, p.y, p.z are the position of the balls. it should be computed with camera's intrinstic parameters
+        p.y = isy;
+        p.z = isz;
+        ball_list.points.push_back(p);
+
+        std_msgs::ColorRGBA c;
+        c.r = 0.0;  //set the color of the balls. You can set it respectively.
+        c.g = 1.0;
+        c.b = 0.0;
         c.a = 1.0;
         ball_list.colors.push_back(c);
     }
@@ -468,7 +554,7 @@ void BallDetectNode::remove_trashval(vector<Point2f> &center, vector<float> &rad
 
 short int BallDetectNode::calibrate_rangeinfo(short int x){
     short int y = 1/config_.a * (x - config_.b);
-    return y;
+    return abs(y);
 
 }
 

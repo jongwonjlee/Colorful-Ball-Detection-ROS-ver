@@ -28,12 +28,16 @@ struct balls_info
 {
     int num_r;
     int num_b;
+    int num_g;
     std::vector<cv::Point2i>center_r;
     std::vector<cv::Point2i>center_b;
+    std::vector<cv::Point2i>center_g;
     std::vector<int>radius_r;
     std::vector<int>radius_b;
+    std::vector<int>radius_g;
     std::vector<short int>distance_r;
     std::vector<short int>distance_b;
+    std::vector<short int>distance_g;
 
 };
 
@@ -61,6 +65,10 @@ private:
     const int ratio_b = 3;
     const int kernel_size_b = 3;
 
+    const int lowThreshold_g = 100;
+    const int ratio_g = 3;
+    const int kernel_size_g = 3;
+
     /* setup default parameters */
     const float fball_radius = 0.073/2;
 
@@ -70,13 +78,15 @@ private:
     float distortion_data[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 
     /*** EXTRINSIC PARAMETERS SHOULD BE HERE!!! ***/
-    float rotation[9] = {0.997083, -0.0754944, 0.0112147, -0.0426682, -0.429536, 0.902041, -0.0632819, -0.899888, -0.431505};
-    float translation[3] = {-0.0628376, -0.0471899, 0.361587};
+    float rotation[9] =  {0.994288, -0.00809444, -0.106427, 0.0943365, -0.399789, 0.91174, -0.0499283, -0.916572, -0.396741};
+    float translation[3] = {-0.132423, -0.0430853, 0.332202};
+
+
 
     /* Initialization of variable for text drawing */
     const double fontScale = 2;
     const int thickness = 3;
-    const int iMin_tracking_ball_size = 5;
+    const int iMin_tracking_ball_size = 3;
 
 
     dynamic_reconfigure::Server<ball_detection::BallDetectionConfig>* reconfigureServer_; ///< parameter server stuff
