@@ -28,12 +28,16 @@ struct balls_info
 {
     int num_r;
     int num_b;
+    int num_g;
     std::vector<cv::Point2i>center_r;
     std::vector<cv::Point2i>center_b;
+    std::vector<cv::Point2i>center_g;
     std::vector<int>radius_r;
     std::vector<int>radius_b;
+    std::vector<int>radius_g;
     std::vector<short int>distance_r;
     std::vector<short int>distance_b;
+    std::vector<short int>distance_g;
 
 };
 
@@ -47,6 +51,7 @@ private:
     cv::Mat buffer_color;
     cv::Mat buffer_depth;
     ros::Publisher pub;
+    ros::Publisher pub_markers;
     ros::NodeHandle nh;
     ros::NodeHandle nh_private_;
 
@@ -60,6 +65,10 @@ private:
     const int ratio_b = 3;
     const int kernel_size_b = 3;
 
+    const int lowThreshold_g = 100;
+    const int ratio_g = 3;
+    const int kernel_size_g = 3;
+
     /* setup default parameters */
     const float fball_radius = 0.073/2;
 
@@ -69,13 +78,15 @@ private:
     float distortion_data[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 
     /*** EXTRINSIC PARAMETERS SHOULD BE HERE!!! ***/
-    float rotation[9] = {0.99948, -0.0278864, 0.0161993, -0.0258717, -0.393425, 0.918993, -0.0192542, -0.918934, -0.393942};
-    float translation[3] = {-0.0711494, -0.0441139, 0.338856};
+    float rotation[9] =  {0.994288, -0.00809444, -0.106427, 0.0943365, -0.399789, 0.91174, -0.0499283, -0.916572, -0.396741};
+    float translation[3] = {-0.132423, -0.0430853, 0.332202};
+
+
 
     /* Initialization of variable for text drawing */
     const double fontScale = 2;
     const int thickness = 3;
-    const int iMin_tracking_ball_size = 10;
+    const int iMin_tracking_ball_size = 3;
 
 
     dynamic_reconfigure::Server<ball_detection::BallDetectionConfig>* reconfigureServer_; ///< parameter server stuff
@@ -87,6 +98,7 @@ private:
     void pub_msgs(balls_info &ball_information);
 
     std::vector<float> pixel2point_depth(cv::Point2i pixel_center, int distance);
+    std::vector<float> pixel2point(cv::Point2i pixel_center, int pixel_radius);
     std::vector<float> transform_coordinate( std::vector<float> input );
     void morphOps(cv::Mat &thresh);
     void remove_trashval(std::vector<cv::Point2f> &center, std::vector<float> &radius, int pixel_radius);
